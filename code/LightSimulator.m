@@ -110,6 +110,22 @@ classdef LightSimulator
             radIntMag = norm(radIntVec);
         end
         
+        function RadiIn = RadianceInMaterialPoint(obj, pnt, normal)
+            %calculate the in going radiance from the source to some point
+            %on the material given its normal and location.
+            
+            %Radiant intensity at point
+            [~, radIntVec] = RadiantIntensityAtPoint(obj, pnt);
+            
+            %Radiance received at point on surface
+            RadiIn = dot(-radIntVec, normal);
+            
+            %incoming radiance cannot be negative.
+            if RadiIn < 0
+               RadiIn = 0; 
+            end           
+        end
+        
         function RadiOut = RadianceOutMaterialPoint(obj, pnt, normal, reflectance)
             %calculate the out going radiance that is reflected/emitted
             %at a point on a surface with a given normal and reflectance
