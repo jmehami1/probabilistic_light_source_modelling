@@ -1,0 +1,219 @@
+
+<!DOCTYPE html
+  PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html><head>
+      <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+   <!--
+This HTML was auto-generated from MATLAB code.
+To make changes, update the MATLAB code and republish this document.
+      --><title>line_plane_intersection</title><meta name="generator" content="MATLAB 9.7"><link rel="schema.DC" href="http://purl.org/dc/elements/1.1/"><meta name="DC.date" content="2020-06-29"><meta name="DC.source" content="doc.m"><style type="text/css">
+html,body,div,span,applet,object,iframe,h1,h2,h3,h4,h5,h6,p,blockquote,pre,a,abbr,acronym,address,big,cite,code,del,dfn,em,font,img,ins,kbd,q,s,samp,small,strike,strong,sub,sup,tt,var,b,u,i,center,dl,dt,dd,ol,ul,li,fieldset,form,label,legend,table,caption,tbody,tfoot,thead,tr,th,td{margin:0;padding:0;border:0;outline:0;font-size:100%;vertical-align:baseline;background:transparent}body{line-height:1}ol,ul{list-style:none}blockquote,q{quotes:none}blockquote:before,blockquote:after,q:before,q:after{content:'';content:none}:focus{outine:0}ins{text-decoration:none}del{text-decoration:line-through}table{border-collapse:collapse;border-spacing:0}
+
+html { min-height:100%; margin-bottom:1px; }
+html body { height:100%; margin:0px; font-family:Arial, Helvetica, sans-serif; font-size:10px; color:#000; line-height:140%; background:#fff none; overflow-y:scroll; }
+html body td { vertical-align:top; text-align:left; }
+
+h1 { padding:0px; margin:0px 0px 25px; font-family:Arial, Helvetica, sans-serif; font-size:1.5em; color:#d55000; line-height:100%; font-weight:normal; }
+h2 { padding:0px; margin:0px 0px 8px; font-family:Arial, Helvetica, sans-serif; font-size:1.2em; color:#000; font-weight:bold; line-height:140%; border-bottom:1px solid #d6d4d4; display:block; }
+h3 { padding:0px; margin:0px 0px 5px; font-family:Arial, Helvetica, sans-serif; font-size:1.1em; color:#000; font-weight:bold; line-height:140%; }
+
+a { color:#005fce; text-decoration:none; }
+a:hover { color:#005fce; text-decoration:underline; }
+a:visited { color:#004aa0; text-decoration:none; }
+
+p { padding:0px; margin:0px 0px 20px; }
+img { padding:0px; margin:0px 0px 20px; border:none; }
+p img, pre img, tt img, li img, h1 img, h2 img { margin-bottom:0px; } 
+
+ul { padding:0px; margin:0px 0px 20px 23px; list-style:square; }
+ul li { padding:0px; margin:0px 0px 7px 0px; }
+ul li ul { padding:5px 0px 0px; margin:0px 0px 7px 23px; }
+ul li ol li { list-style:decimal; }
+ol { padding:0px; margin:0px 0px 20px 0px; list-style:decimal; }
+ol li { padding:0px; margin:0px 0px 7px 23px; list-style-type:decimal; }
+ol li ol { padding:5px 0px 0px; margin:0px 0px 7px 0px; }
+ol li ol li { list-style-type:lower-alpha; }
+ol li ul { padding-top:7px; }
+ol li ul li { list-style:square; }
+
+.content { font-size:1.2em; line-height:140%; padding: 20px; }
+
+pre, code { font-size:12px; }
+tt { font-size: 1.2em; }
+pre { margin:0px 0px 20px; }
+pre.codeinput { padding:10px; border:1px solid #d3d3d3; background:#f7f7f7; }
+pre.codeoutput { padding:10px 11px; margin:0px 0px 20px; color:#4c4c4c; }
+pre.error { color:red; }
+
+@media print { pre.codeinput, pre.codeoutput { word-wrap:break-word; width:100%; } }
+
+span.keyword { color:#0000FF }
+span.comment { color:#228B22 }
+span.string { color:#A020F0 }
+span.untermstring { color:#B20000 }
+span.syscmd { color:#B28C00 }
+
+.footer { width:auto; padding:10px 0px; margin:25px 0px 0px; border-top:1px dotted #878787; font-size:0.8em; line-height:140%; font-style:italic; color:#878787; text-align:left; float:none; }
+.footer p { margin:0px; }
+.footer a { color:#878787; }
+.footer a:hover { color:#878787; text-decoration:underline; }
+.footer a:visited { color:#878787; }
+
+table th { padding:7px 5px; text-align:left; vertical-align:middle; border: 1px solid #d6d4d4; font-weight:bold; }
+table td { padding:7px 5px; text-align:left; vertical-align:top; border:1px solid #d6d4d4; }
+
+
+
+
+
+  </style></head><body><div class="content"><h1>line_plane_intersection</h1><!--introduction--><p>Function to compute the intersection point between the (N,u) line and the (M,n) plane of the 3D space.</p><p>Author &amp; support : nicolas.douillet (at) free.fr, 2019-2020.</p><!--/introduction--><h2>Contents</h2><div><ul><li><a href="#1">Syntax</a></li><li><a href="#2">Description</a></li><li><a href="#3">See also</a></li><li><a href="#4">Principle</a></li><li><a href="#5">Input arguments</a></li><li><a href="#6">Output arguments</a></li><li><a href="#7">Example #1</a></li><li><a href="#8">Example #2</a></li><li><a href="#9">Example #3</a></li></ul></div><h2 id="1">Syntax</h2><p>[I,rc] = line_plane_intersection(u, N, n, M);</p><p>[I,rc] = line_plane_intersection(u, N, n, M, verbose);</p><h2 id="2">Description</h2><p>[I,rc] = line_plane_intersection(u, N, n, M) computes the coordinates of I, the intersection point between the line (u,N) and the plane (n,M).</p><p>In the most generic case, I is a point in the 3D space, but when the line is stricly parallel to the plane, I is the empty set, and when the line is included in the plane, I is a function handle corresponding to the system of parametric equations of the line.</p><p>[I,rc] = line_plane_intersection(u, N, n, M, verbose) displays a message in console when verbose is set either to logical true or real numeric 1, and doesn't when it is set to logical false or real numeric 0.</p><h2 id="3">See also</h2><p><a href="https://fr.mathworks.com/matlabcentral/fileexchange/73853-planes-intersection">planes_intersection</a> | <a href="https://fr.mathworks.com/matlabcentral/fileexchange/73922-lines-intersection-3d-2d?s_tid=prof_contriblnk">lines_intersection</a> | <a href="https://fr.mathworks.com/matlabcentral/fileexchange/73490-point-to-plane-distance?s_tid=prof_contriblnk">point_to_plane_distance</a> | <a href="https://fr.mathworks.com/matlabcentral/fileexchange/73478-point-to-line-distance-3d-2d?s_tid=prof_contriblnk">point_to_line_distance</a></p><h2 id="4">Principle</h2><p>Based on solving Descartes plane equation :</p><p>ax + by + cz + d = 0, where n = [a, b, c] is a vector normal to the plane,</p><p>combined with the parametric equations system of a 3D line :</p><p>x(t) = x0 + at y(t) = y0 + bt z(t) = z0 + ct</p><p>where N0 = [x0, y0, z0] is a point belonging to the line, and u = [a, b, c], a vector directing this line.</p><h2 id="5">Input arguments</h2><p>- u : real row or column vector double. numel(u) = 3. One director vector of the parametric line.</p><p>- N : real row or column vector double. numel(N) = 3. One point belonging to the line.</p><p>- n : real row or column vector double. numel(n) = 3. One normal vector to the plane.</p><p>- M : real row or column vector double. numel(M) = 3. One point belonging to the plane.</p><p>- verbose : logical *true(1)/false(0), to enable/disable the verbose mode.</p><h2 id="6">Output arguments</h2><p>- I = [xI yI zI], real row or column vector double, the intersection point.</p><p>- rc : return code, integer scalar in the set {1,2,3}.</p><pre>      0 : void / [] intersection</pre><pre>      1 : point intersection (unique).</pre><pre>      2 : line intersection</pre><pre>      rc return code is necessary to distinguish between cases where
+      (N,u) line and the (M,n) plane intersection is a single point
+      and where it is the line itself.</pre><h2 id="7">Example #1</h2><p>One unique intersection point</p><pre class="codeinput">n = [1 1 1];
+M = n;
+u = [1 0 0];
+N = u; <span class="comment">% (N,u) = (OX) axis</span>
+[I,rc] = line_plane_intersection(u, N, n, M) <span class="comment">% one unique intersction point expected : I = [3 0 0], rc = 1</span>
+</pre><pre class="codeoutput">
+I =
+
+     3     0     0
+
+
+rc =
+
+     1
+
+</pre><h2 id="8">Example #2</h2><p>Line and plane are strictly // ; no intersection</p><pre class="codeinput">n = [0 0 1];
+M = [0 0 0]; <span class="comment">% (M,n) = (XOY) plan</span>
+u = [1 2 0];
+N = [0 0 6];
+[I,rc] = line_plane_intersection(u, N, n, M, false) <span class="comment">% line strictly // plane =&gt;  I = [], rc = 0 expected</span>
+</pre><pre class="codeoutput">
+I =
+
+     []
+
+
+rc =
+
+     0
+
+</pre><h2 id="9">Example #3</h2><p>Line is included in the plane</p><pre class="codeinput">n = [1 1 1];
+M = (1/3)*[1 1 1];
+u = [1 1 -2];
+N = [0.5 0.5 0];
+[I,rc] = line_plane_intersection(u, N, n, M) <span class="comment">% line belongs to the plane, rc = 2 expected</span>
+</pre><pre class="codeoutput">(N,u) line belongs to the (M,n) plane. Their intersection is the whole (N,u) line.
+
+I =
+
+    0.3333    0.3333    0.3333
+
+
+rc =
+
+     2
+
+</pre><p class="footer"><br><a href="https://www.mathworks.com/products/matlab/">Published with MATLAB&reg; R2019b</a><br></p></div><!--
+##### SOURCE BEGIN #####
+%% line_plane_intersection
+%
+% Function to compute the intersection point
+% between the (N,u) line and the (M,n) plane of the 3D space.
+%
+% Author & support : nicolas.douillet (at) free.fr, 2019-2020.
+%
+%% Syntax
+%
+% [I,rc] = line_plane_intersection(u, N, n, M);
+%
+% [I,rc] = line_plane_intersection(u, N, n, M, verbose);
+%
+%% Description
+%
+% [I,rc] = line_plane_intersection(u, N, n, M) computes the coordinates of I,
+% the intersection point between the line (u,N) and the plane (n,M).
+%
+% In the most generic case, I is a point in the 3D space, but when
+% the line is stricly parallel to the plane, I is the empty set, and when
+% the line is included in the plane, I is a function handle corresponding
+% to the system of parametric equations of the line.
+%
+% [I,rc] = line_plane_intersection(u, N, n, M, verbose) displays a message in
+% console when verbose is set either to logical true or real numeric 1, and
+% doesn't when it is set to logical false or real numeric 0.
+%
+%% See also
+%
+% <https://fr.mathworks.com/matlabcentral/fileexchange/73853-planes-intersection planes_intersection> |
+% <https://fr.mathworks.com/matlabcentral/fileexchange/73922-lines-intersection-3d-2d?s_tid=prof_contriblnk lines_intersection> |
+% <https://fr.mathworks.com/matlabcentral/fileexchange/73490-point-to-plane-distance?s_tid=prof_contriblnk point_to_plane_distance> |
+% <https://fr.mathworks.com/matlabcentral/fileexchange/73478-point-to-line-distance-3d-2d?s_tid=prof_contriblnk point_to_line_distance>
+%
+%% Principle
+%
+% Based on solving Descartes plane equation :
+%
+% ax + by + cz + d = 0, where n = [a, b, c] is a vector normal to the plane,
+%
+% combined with the parametric equations system of a 3D line :
+%
+% x(t) = x0 + at 
+% y(t) = y0 + bt
+% z(t) = z0 + ct
+%
+% where N0 = [x0, y0, z0] is a point belonging to the line, and u = [a, b, c], a vector directing this line.
+%
+%% Input arguments
+%
+% - u : real row or column vector double. numel(u) = 3. One director vector of the parametric line.
+%
+% - N : real row or column vector double. numel(N) = 3. One point belonging to the line.
+%
+% - n : real row or column vector double. numel(n) = 3. One normal vector to the plane.
+%
+% - M : real row or column vector double. numel(M) = 3. One point belonging to the plane.
+%
+% - verbose : logical *true(1)/false(0), to enable/disable the verbose mode.
+%
+%% Output arguments
+%
+% - I = [xI yI zI], real row or column vector double, the intersection point.
+%
+% - rc : return code, integer scalar in the set {1,2,3}.
+%
+%        0 : void / [] intersection
+%
+%        1 : point intersection (unique).
+%
+%        2 : line intersection
+%
+%        rc return code is necessary to distinguish between cases where
+%        (N,u) line and the (M,n) plane intersection is a single point
+%        and where it is the line itself.
+%
+%% Example #1
+% One unique intersection point
+n = [1 1 1];
+M = n;
+u = [1 0 0];
+N = u; % (N,u) = (OX) axis
+[I,rc] = line_plane_intersection(u, N, n, M) % one unique intersction point expected : I = [3 0 0], rc = 1
+
+%% Example #2
+% Line and plane are strictly // ; no intersection
+n = [0 0 1];
+M = [0 0 0]; % (M,n) = (XOY) plan
+u = [1 2 0];
+N = [0 0 6];
+[I,rc] = line_plane_intersection(u, N, n, M, false) % line strictly // plane =>  I = [], rc = 0 expected
+
+%% Example #3
+% Line is included in the plane
+n = [1 1 1];
+M = (1/3)*[1 1 1];
+u = [1 1 -2];
+N = [0.5 0.5 0];
+[I,rc] = line_plane_intersection(u, N, n, M) % line belongs to the plane, rc = 2 expected
+##### SOURCE END #####
+--></body></html>
