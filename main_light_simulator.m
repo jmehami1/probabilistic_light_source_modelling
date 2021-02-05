@@ -13,13 +13,20 @@ addpath(genpath('line_plane_intersection'));
 addpath('code');
 
 
-%Pose of light w.r.t to camera
+%use the CMAES Optimisation instead of non-linear least squares
+useCMAES = false;
+
+%variance of pixel intensity noise in line-scan camera measurements
+intNoiseVar = 0.01;
+
+%% Setting up non-isotropic light source
+
+%Pose of source in world coordinates (frame camera)
 ligSourLoc = [0.1;0.1;-0.1];
 ligSourOrien = eul2rotm(deg2rad([0,-10, 0]), 'ZYX');
-
 lightSrcPoseFrame = [ligSourOrien, ligSourLoc; 0, 0, 0, 1];
 
-%radiant intensity distribution
+%radiant intensity distribution parameters
 maxRadiInt = 10;
 mu = 1.5;
 
@@ -60,6 +67,8 @@ lightSrc.PlotLightSource(fig);
 
 %% Setting up Line-scan camera
 
+%assuming no distortion and no uncertainty in parameters
+
 %line-scan intrinsic camera parameters
 fyLS  = 800;
 v0 = 160;
@@ -68,8 +77,7 @@ yPix = 320;
 lsIntrinsic = cameraIntrinsics([1, fyLS], [realmin,v0],[yPix, 1]);
 
 %combination of the ceoefficient of clarity and optical coefficient
-betaLS = 0.95;
-
+%betaLS = 0.95;targetNormal
 
 %pose of line-scan w.r.t frame camera
 rotLS = eul2rotm(deg2rad([90, 0, -10]), 'ZYX');
@@ -150,7 +158,7 @@ figGroundTruth = figure('Name', 'Radiant intensity on line-scan view-plane');
 surf(Y, Z, radIntMag, 'EdgeColor', 'none'); hold on;
 xlabel('y');
 ylabel('z');
-title('Groundtruth')
+title('View-plane RADIANT INTENSITY')
 view(2);
 scatter3(0, 0, (maxRadiInt+1), 200, [0,0,1], 'filled'); %line-scan origin
 colormap(jet(100));
@@ -171,9 +179,10 @@ plot3(yPoly, zPoly, (maxRadiInt+1)*ones(size(yPoly)), 'Color', [1,1,1], 'LineWid
 
 
 %% Reflective target
-% assume that the target is an infinitely tall flat surface surface which
+% assume that the target is an infinitely tall flat surface which is
 % 10cm wide. The origin on the target will be in the middle.
 %target will be positioned randonly in the line-scan camera view.
+% Z-axis of the target is inline with its normal. i.e. z-axis vector = surface normal
 target.Width = 0.1; %width of target in metres
 target.Reflectance = 0.95; %reflectance of target for any wavelength
 target.LeftEdge = [0; -target.Width/2; 0];
@@ -187,6 +196,8 @@ target.RightEdge = [0; target.Width/2; 0];
 % - the pixel location of the centre of the target in the line-scan image
 % - orientation of target or the normal of the target surface.
 
+%different random locations of the target in the view-plane of the
+%line-scan camera
 noSamples = 100;
 
 KMat = lsIntrinsic.IntrinsicMatrix';
@@ -197,8 +208,6 @@ targetSamplePolarLS = cell(1,noSamples);
 targetSampleNormal = zeros(3, noSamples);
 
 lightSrcPoseLS = T_LS2Frame\lightSrcPoseFrame;
-
-%rng(1);
 
 for sample = 1:noSamples
     %get random distance between line-scan and target in metres
@@ -220,11 +229,11 @@ for sample = 1:noSamples
     
     %pick angle about x-axis between 90deg and 270 deg to get the pose of
     %the board. Only assume rotation about x-axis (yaw only)
-%         a = deg2rad(120);
-%         b = deg2rad(250);
-%         xAngle = (b-a)*rand()+(a);
-%     %initially assume a constant normal angle
-     xAngle = pi;
+    %         a = deg2rad(120);
+    %         b = deg2rad(250);
+    %         xAngle = (b-a)*rand()+(a);
+    %     %initially assume a constant normal angle
+    xAngle = pi;
     rotTarget = eul2rotm([0, 0, xAngle], 'ZYX');
     
     
@@ -274,7 +283,6 @@ for sample = 1:noSamples
     for j = 1:2
         
         vImgCoorTarget(j) = round(vImgCoorTarget(j));
-        
         
         if vImgCoorTarget(j) < 1
             vImgCoorTarget(j) = 1;
@@ -358,25 +366,26 @@ XFrame = reshape(XYZrot(:,1),rows) + tLS(1);
 YFrame = reshape(XYZrot(:,2),rows) + tLS(2);
 ZFrame = reshape(XYZrot(:,3),rows) + tLS(3);
 
-[~, radIntMagVec] = lightSrc.RadiantIntensityMesh(XFrame, YFrame, ZFrame);
+% [~, radIntMagVec] = lightSrc.RadiantIntensityMesh(XFrame, YFrame, ZFrame);
 
-radIntMagDotTarget =  radIntMag;
+radianceInTarget = zeros(size(XFrame));
 
-for i = 1:size(radIntMagVec,1)
-    for j = 1:size(radIntMagVec, 2)
-        vec = squeeze(radIntMagVec(i, j, :));
+for i = 1:size(XFrame,1)
+    for j = 1:size(XFrame, 2)
+        pnt = [XFrame(i,j), YFrame(i,j), ZFrame(i,j)];
         
-        radIntMagDotTarget(i, j) = abs(dot(vec, normTarget)) + normrnd(0, 0);
+        radianceInTarget(i, j) = lightSrc.RadianceInMaterialPoint(pnt, normTarget) + ...
+            normrnd(0, intNoiseVar);
     end
 end
 
 %plot 2D view-plane surface with line-scan camera as origin. Only plotting
 %YZ plane.
 figGroundTruthDotTarget = figure('Name', 'Radiant intensity on line-scan view-plane');
-surf(Y, Z, radIntMagDotTarget, 'EdgeColor', 'none'); hold on;
+surf(Y, Z, radianceInTarget, 'EdgeColor', 'none'); hold on;
 xlabel('y');
 ylabel('z');
-title('Groundtruth dot product with target normal')
+title(['View-plane RADIANCE hitting target, noise of VAR ', num2str(intNoiseVar)]);
 view(2);
 scatter3(0, 0, (maxRadiInt+1), 200, [0,0,1], 'filled'); %line-scan origin
 colormap(jet(100));
@@ -390,7 +399,6 @@ scatter3(lightSrcLS(2), lightSrcLS(3), (maxRadiInt+1), 200, [0,1,0], 'filled');
 %plot frame camera
 frameCameraLS = inv(T_LS2Frame);
 scatter3(frameCameraLS(2,4), frameCameraLS(3,4), (maxRadiInt+1), 200, [1,0,0], 'filled');
-
 
 %plot fov of line-scan on view-plane
 plot3(yPoly, zPoly, (maxRadiInt+1)*ones(size(yPoly)), 'Color', [1,1,1], 'LineWidth', 2);
@@ -415,8 +423,8 @@ for sample = 1:noSamples
     targetInten = zeros(1,numPts);
     
     for pt = 1:numPts
-%         angleLightRayLS = targetPolarLS(1,pt);
-%         vignet = betaLS*cos(angleLightRayLS)^4;
+        %         angleLightRayLS = targetPolarLS(1,pt);
+        %         vignet = betaLS*cos(angleLightRayLS)^4;
         vignet = 1;
         targetInten(pt) = vignet*lightSrc.RadianceOutMaterialPoint(targetPtsFrame(:,pt), targetNormal, target.Reflectance);
     end
@@ -424,10 +432,10 @@ for sample = 1:noSamples
     %add gaussian white noise to target pixel measurements
     targetIntenNoise = targetInten + normrnd(0, 0.01, size(targetInten));
     
-%     figure();
-%     plot(targetIntenNoise); hold on;
-%     plot(targetInten)
-        
+    %     figure();
+    %     plot(targetIntenNoise); hold on;
+    %     plot(targetInten)
+    
     targetSampleInten(sample) = {targetIntenNoise};
 end
 
@@ -449,18 +457,25 @@ end
 % targetPntFrame = zeros(3, noSamples*yPix);
 % noPts = 0;
 
-optOptions = optimoptions('lsqnonlin', 'Algorithm', 'levenberg-marquardt', 'SpecifyObjectiveGradient',true, 'CheckGradients', false, ...
-    'MaxIterations', 1000000000, 'FunctionTolerance',1e-6, 'MaxFunctionEvaluations',1000000000, 'StepTolerance',1e-6);%,'ScaleProblem', ...
-%'jacobian', 'InitDamping', 0.01, 'FiniteDifferenceType', 'central');'
-optOptions.Display = 'none';
-
-cmaesOptions.LBounds = [0, 0, 0]';
-cmaesOptions.UBounds = [100,100,100]';
-
-cmaesOptions.SaveVariables = 'off';
-cmaesOptions.DispFinal = 'off';
-cmaesOptions.LogModulo = 0;
-cmaesOptions.DispModulo = 0;
+if useCMAES
+    cmaesOptions.LBounds = [0, 0, 0]';
+    cmaesOptions.UBounds = [100,100,100]';
+    
+    cmaesOptions.SaveVariables = 'off';
+    cmaesOptions.DispFinal = 'off';
+    cmaesOptions.LogModulo = 0;
+    cmaesOptions.DispModulo = 0;
+    
+else
+    
+    optOptions = optimoptions('lsqnonlin', 'Algorithm', 'levenberg-marquardt', 'SpecifyObjectiveGradient',true, 'CheckGradients', false, ...
+        'MaxIterations', 1000000000, 'FunctionTolerance',1e-6, 'MaxFunctionEvaluations',1000000000, 'StepTolerance',1e-6);
+    %     ,'ScaleProblem', ...
+    %         'jacobian', 'InitDamping', 0.01, 'FiniteDifferenceType', 'central');
+    
+    optOptions.Display = 'none';
+    
+end
 
 
 % optOptions = optimoptions('lsqnonlin', 'Algorithm', 'trust-region-reflective', 'SpecifyObjectiveGradient',true, 'CheckGradients', false, ...
@@ -470,7 +485,7 @@ cmaesOptions.DispModulo = 0;
 optPhiTrials = zeros(noSamples, 3);
 resNormTrials = zeros(noSamples, 1);
 
-Phi0 = [10, 1.5, 1];
+Phi0 = [maxRadiInt, mu, rAtt];
 
 
 for trials = 1:noSamples
@@ -481,7 +496,7 @@ for trials = 1:noSamples
     targetPntFrame = zeros(3, trials*yPix);
     noPts = 0;
     
-   %combines all samples into a single array for the current trials
+    %combines all samples into a single array for the current trials
     for samples = 1:trials
         noCurPts = length(targetSampleInten{sample});
         
@@ -495,7 +510,7 @@ for trials = 1:noSamples
     
     targetL = targetL(1:noPts);
     
-%     targetE = targetE + normrnd(0, 0.1, size(targetE));
+    %     targetE = targetE + normrnd(0, 0.1, size(targetE));
     
     targetPolarLS = targetPolarLS(:, 1:noPts);
     targetPntNormals = targetPntNormals(:, 1:noPts);
@@ -504,73 +519,84 @@ for trials = 1:noSamples
     %The optimisation function
     f = @(H)LightSourceLeastSqrObj(H, targetL', targetPntFrame, ...
         targetPntNormals, ligSourLoc, lightSrc.get_SourDirVec(), target.Reflectance);
-
-
+    
+    
     [optPhi,resNorm] = lsqnonlin(f,Phi0, [], [], optOptions);
-
-% [optPhi,resNorm] = cmaes('LightSourceResidual', Phi0, [], cmaesOptions, targetL', targetPntFrame, ...
-%     targetPntNormals, ligSourLoc, lightSrc.get_SourDirVec(), target.Reflectance);
-
-optPhi = optPhi';
-
+    
+    % [optPhi,resNorm] = cmaes('LightSourceResidual', Phi0, [], cmaesOptions, targetL', targetPntFrame, ...
+    %     targetPntNormals, ligSourLoc, lightSrc.get_SourDirVec(), target.Reflectance);
+    
+    optPhi = optPhi';
+    
     optPhiTrials(trials, :) = optPhi;
     resNormTrials(trials) = resNorm;
 end
 
-%% 
+%%
 abs_phi0 = abs(optPhiTrials(:,1) - maxRadiInt);
 abs_mu = abs(optPhiTrials(:,2) - mu);
 abs_r_d = abs(optPhiTrials(:,3) - rAtt);
 
-figure('Name', 'Absolute difference of Phi_0');
+figure('Name', 'Absolute error in Phi_0');
 plot(1:noSamples, abs_phi0);
 xlabel('samples');
-ylabel('absolute difference in \Phi_0');
+ylabel('absolute error in \Phi_0');
+ylim([0, max(abs_phi0)])
 grid on;
 
-figure('Name', 'Absolute difference of mu');
+figure('Name', 'Absolute error in mu');
 plot(1:noSamples, abs_mu);
 xlabel('samples');
-ylabel('absolute difference in \mu');
+ylabel('absolute error in \mu');
+ylim([0, max(abs_mu)])
 grid on;
+
+figure('Name', 'Optimisation Residuals');
+plot(1:noSamples, resNormTrials);
+xlabel('samples');
+ylabel('Residual after optimisation');
+ylim([0, max(resNormTrials)])
+grid on;
+
+
 
 
 % %% Non-linear optimisation using parameter light source model
-% 
+%
 % %Calculate incoming radiance recieved through the knowledge of the material
 % targetL = (pi/target.Reflectance) .* targetInten;
-% 
+%
 % %The optimisation function
 % f = @(H)LightSourceLeastSqrObj(H, targetL', targetPntFrame, ...
 %     targetPntNormals, ligSourLoc, lightSrc.get_SourDirVec());
-% 
+%
 % Phi0 = [10, 1, 1];
-% 
+%
 % optOptions = optimoptions('lsqnonlin', 'Algorithm', 'levenberg-marquardt', 'SpecifyObjectiveGradient',true, 'CheckGradients', true, ...
 %     'MaxIterations', 1000000000, 'FunctionTolerance',1e-6, 'MaxFunctionEvaluations',1000000000, 'StepTolerance',1e-6);%,'ScaleProblem', ...
 % %'jacobian', 'InitDamping', 0.01, 'FiniteDifferenceType', 'central');
 % optOptions.Display = 'none';
-% 
+%
 % % optOptions = optimoptions('lsqnonlin', 'Algorithm', 'trust-region-reflective', 'SpecifyObjectiveGradient',false, 'CheckGradients', false, ...
 % %     'MaxIterations', 1000000000, 'FunctionTolerance',1e-6, 'MaxFunctionEvaluations',1000000000, 'StepTolerance',1e-15, 'OptimalityTolerance', 1e-6);
 % % optOptions.Display = 'none';
-% 
+%
 % %Perform optimisation
 % [optPhi,resNorm] = lsqnonlin(f,Phi0, [] , [], optOptions);
-% 
+%
 % %% Set up for training
 % xAngle = pi;
 % rotTarget = eul2rotm([0, 0, xAngle], 'ZYX');
-% 
+%
 % predictorNames = {'theta', 'rho'};
-% 
+%
 % % Convert input to table
 % inputTable = array2table(targetPolarLS', 'VariableNames', predictorNames);
-% 
+%
 % predictors = inputTable(:, predictorNames);
 % response = targetInten(:);
 % isCategoricalPredictor = [false, false];
-% 
+%
 % %% Train a linear regression model
 % % This code specifies all the model options and trains the model.
 % concatenatedPredictorsAndResponse = predictors;
@@ -578,18 +604,18 @@ grid on;
 % linearModel = fitlm(concatenatedPredictorsAndResponse, 'linear', 'RobustOpts', 'off');
 % disp(linearModel);
 % % coeffLine = linearModel.Coefficients.Estimate;
-% 
+%
 % %% Train a quadratic regression model
 % % This code specifies all the model options and trains the model.
 % % concatenatedPredictorsAndResponse = predictors;
 % % concatenatedPredictorsAndResponse.targetInten = response;
 % QuadModel = fitlm(concatenatedPredictorsAndResponse, 'quadratic', 'RobustOpts', 'off');
 % disp(QuadModel);
-% 
+%
 % % coeffQuad = QuadModel.Coefficients.Estimate;
-% 
+%
 % %% Train a GP using maternal kernal
-% 
+%
 % % Train a regression model
 % % This code specifies all the model options and trains the model.
 % GPmatModel = fitrgp(predictors, ...
@@ -598,50 +624,50 @@ grid on;
 %     'KernelFunction', 'matern52', ...
 %     'Standardize', true);
 % disp(GPmatModel);
-% 
+%
 % % GPmatModel = fitlm(concatenatedPredictorsAndResponse, 'g
-% 
+%
 % %% 2D plot of radiant intensity on view-plane
-% 
+%
 % %plot it as a rectangle starting at where the line-scan is positioned and
 % %only plot the YZ-plane
 % %size of plane in each dimension
 % % yDist = 0.5;
 % % zDist = 1;
-% 
+%
 % %Create mesh
 % y = linspace(-yDist, yDist, 100);
 % z = linspace(0, zDist, 100);
 % x = 0;
-% 
+%
 % [X,Y,Z] = meshgrid(x,y,z);
-% 
+%
 % %remove extra necessary singular dimension
 % X = squeeze(X);
 % Y = squeeze(Y);
 % Z = squeeze(Z);
-% 
+%
 % Yarr = Y(:);
 % Zarr = Z(:);
-% 
+%
 % [theta, rho] = cart2pol(Yarr, Zarr);
-% 
+%
 % thetaRhoMeshPred = [theta, rho];
-% 
+%
 % rows = size(X);
-% 
+%
 % radIntMagLine = predict(linearModel, thetaRhoMeshPred);
-% 
+%
 % % a = coeffLine(1);
 % % b = coeffLine(2);
 % % c = coeffLine(3);
 % % radIntMagLine = a + b.*theta + c.*rho;
 % radIntMagLine = reshape(radIntMagLine,rows);
-% 
-% 
-% 
+%
+%
+%
 % radIntMagQuad = predict(QuadModel, thetaRhoMeshPred);
-% 
+%
 % % a = coeffQuad(1);
 % % b = coeffQuad(2);
 % % c = coeffQuad(3);
@@ -650,11 +676,11 @@ grid on;
 % % f = coeffQuad(6);
 % % radIntMagQuad = a + b.*theta + c.*rho + d.*theta.*rho + e.*theta.^2 + f.*rho.^2;
 % radIntMagQuad = reshape(radIntMagQuad,rows);
-% 
+%
 % radIntMagGP = predict(GPmatModel, thetaRhoMeshPred);
 % radIntMagGP = reshape(radIntMagGP,rows);
-% 
-% 
+%
+%
 % %plot 2D view-plane surface with line-scan camera as origin. Only plotting
 % %YZ plane.
 % figLineReg = figure('Name', 'Radiant intensity on line-scan view-plane using LINEAR regression');
@@ -673,10 +699,10 @@ grid on;
 % scatter3(frameCameraLS(2,4), frameCameraLS(3,4), (maxRadiInt+1), 200, [1,0,0], 'filled');
 % %plot fov of line-scan on view-plane
 % plot3(yPoly, zPoly, (maxRadiInt+1)*ones(size(yPoly)), 'Color', [1,1,1], 'LineWidth', 2);
-% 
-% 
-% 
-% 
+%
+%
+%
+%
 % %plot 2D view-plane surface with line-scan camera as origin. Only plotting
 % %YZ plane.
 % figQuadReg = figure('Name', 'Radiant intensity on line-scan view-plane using QUADATRIC regression');
@@ -695,8 +721,8 @@ grid on;
 % scatter3(frameCameraLS(2,4), frameCameraLS(3,4), (maxRadiInt+1), 200, [1,0,0], 'filled');
 % %plot fov of line-scan on view-plane
 % plot3(yPoly, zPoly, (maxRadiInt+1)*ones(size(yPoly)), 'Color', [1,1,1], 'LineWidth', 2);
-% 
-% 
+%
+%
 % %plot 2D view-plane surface with line-scan camera as origin. Only plotting
 % %YZ plane.
 % figGPReg = figure('Name', 'Radiant intensity on line-scan view-plane using GP matern 5/2 regression');
@@ -715,13 +741,13 @@ grid on;
 % scatter3(frameCameraLS(2,4), frameCameraLS(3,4), (maxRadiInt+1), 200, [1,0,0], 'filled');
 % %plot fov of line-scan on view-plane
 % plot3(yPoly, zPoly, (maxRadiInt+1)*ones(size(yPoly)), 'Color', [1,1,1], 'LineWidth', 2);
-% 
+%
 % %% Differences between groundtruth
-% 
+%
 % diffRadIntLine = abs(radIntMagLine - radIntMagDotTarget);
 % diffRadIntQuad = abs(radIntMagQuad - radIntMagDotTarget);
 % diffRadIntGP = abs(radIntMagGP - radIntMagDotTarget);
-% 
+%
 % figure('Name', 'abosolute difference of view-plane linear');
 % surf(Y, Z, diffRadIntLine, 'EdgeColor', 'none'); hold on;
 % xlabel('y');
@@ -738,8 +764,8 @@ grid on;
 % scatter3(frameCameraLS(2,4), frameCameraLS(3,4), (maxRadiInt+1), 200, [1,0,0], 'filled');
 % %plot fov of line-scan on view-plane
 % plot3(yPoly, zPoly, (maxRadiInt+1)*ones(size(yPoly)), 'Color', [1,1,1], 'LineWidth', 2);
-% 
-% 
+%
+%
 % figure('Name', 'abosolute difference of view-plane quadratic');
 % surf(Y, Z, diffRadIntQuad, 'EdgeColor', 'none'); hold on;
 % xlabel('y');
@@ -756,8 +782,8 @@ grid on;
 % scatter3(frameCameraLS(2,4), frameCameraLS(3,4), (maxRadiInt+1), 200, [1,0,0], 'filled');
 % %plot fov of line-scan on view-plane
 % plot3(yPoly, zPoly, (maxRadiInt+1)*ones(size(yPoly)), 'Color', [1,1,1], 'LineWidth', 2);
-% 
-% 
+%
+%
 % figure('Name', 'abosolute difference of view-plane GP');
 % surf(Y, Z, diffRadIntGP, 'EdgeColor', 'none'); hold on;
 % xlabel('y');
