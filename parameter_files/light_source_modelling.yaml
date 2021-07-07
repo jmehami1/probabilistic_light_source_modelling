@@ -1,0 +1,18 @@
+# Parameters for use with the light_source_modelling script
+
+# Diffuse board parameters
+NumLines: 2
+ArucoSideLength: 0.035
+SeparationLength: 0.013
+NumRows: 8
+NumCols: 6
+NumberExpectedMarker: 35
+
+
+# Parameters for the code
+DisplayOn: true
+UsingCircularTarget: false
+UsingBlackFly: true
+UseTestData: true
+IMG_ON_PLATFORM: 3
+sigmaRadianceNoise: 0.1
