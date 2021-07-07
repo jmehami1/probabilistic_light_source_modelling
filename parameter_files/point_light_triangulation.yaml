@@ -1,0 +1,14 @@
+# describes the dimensions of the ChArUco triangle pattern used triangulate the direction and location of the assumed point source
+
+Xhemi: 0.201
+Yhemi: 0.1085
+Dhemi: 0.15
+CheckerSideLength: 0.045
+ArucoSideLength: 0.035
+NumRows: 6
+NumCols: 9
+
+# Parameters for the code
+DisplayOn: true
+UsingBlackFly: true
+

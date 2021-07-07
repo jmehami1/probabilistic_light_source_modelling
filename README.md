@@ -7,6 +7,16 @@ MATLAB Simulator
 
 <img align="center" src="Diagrams/light_simulator.png" alt="Light simulator in MATLAB" width="1000" />
 
+
+
+## main_light_modelling
+
+This script is used to build the light source model using collected data from the camera system for each of the bands of the hyperspectral camera. Each band will have a GP and least-squares model.
+
+The script can be run using data located in the `test_data` directory. The parameter `UseTestData` will need to be set to **true** in the YAML parameter file located at `\parameter_files\light_source_modelling.yaml`
+
+
+
 # Completed
 
 - Simulator visualisation is working with point source

@@ -2,7 +2,7 @@
 %
 % Copyright (c) by Carl Edward Rasmussen and Hannes Nickisch 2018-08-01.
 
-disp ('executing gpml startup script...')
+fprintf ('executing gpml startup script...')
 mydir = fileparts (mfilename ('fullpath'));        % where am I located
 addpath (mydir);
 
@@ -19,3 +19,5 @@ for d = dirs
 end
 
 addpath([mydir,'/util/sparseinv'])
+
+fprintf('Done\n');
