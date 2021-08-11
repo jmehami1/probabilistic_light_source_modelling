@@ -14,3 +14,4 @@ DisplayOn: false
 UsingBlackFly: true
 UseTestData: true
 sigmaRadianceNoise: 0.1
+HasOpenCV: false
