@@ -1,0 +1,16 @@
+# Parameters for main_HS_estimated_reflectance.m 
+
+# Diffuse board parameters
+NumLines: 2
+ArucoSideLength: 0.035
+SeparationLength: 0.013
+NumRows: 8
+NumCols: 6
+NumberExpectedMarker: 35
+
+
+# Parameters for the code
+DisplayOn: false
+UsingBlackFly: true
+UseTestData: true
+sigmaRadianceNoise: 0.1

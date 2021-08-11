@@ -1,74 +1,60 @@
-function [rotMat, trans, found, imgOut] = ArucoPosEst(img, xNumMarker, yNumMarker, arucoLen, sepLen, numMarkersExp, cameraParams)
-%Estimate the extrinsic transformation of a Aruco board w.r.t to a frame
-%camera. This Aruco board does not require all the markers to be present.
+function [rotMat, trans, found, imgOut] = ArucoPosEst(img, markerCornerCell, cameraParams)
+% Estimate the extrinsic pose of a ArUco planar board w.r.t to a frame
+% camera (Transformation from world coordinates to camera coordinates). 
+% This Aruco board can work under occluded or missing markers.
+% INPUTS:
+%       img - distorted image of ArUco board
+%       markerCornerCell - cell array of 2D corner coordinates of each marker
+%           in the coordinate frame of the board (world coordinates). All
+%           corners have a Z-component of 0. This allows for custom boards
+%           that don't require a full grid of markers.
+%           [yNumMarker*xNumMarker x 1]
+%       cameraParams - MATLAB struct of camera parameters
+% OUTPUTS:
+%       rotMat - rotation matrix of extrinsic[3 x 3]
+%       trans - translation matrix of extrinsic [1 x 3]
+%       found - flag if pose could be found
+%       imgOut - image with outlined markers found. Same size as input image
+% Author: Jasprabhjit Mehami, 13446277
 
-markerCornerCell = cell(yNumMarker*xNumMarker, 1);
-ind = 0;
-
-%Get 3D pattern position for each corner of each marker
-for i = 1:yNumMarker
-    for j = 1:xNumMarker
-        x_tl = (j-1)*arucoLen + (j - 1)*sepLen;
-        y_tl = (yNumMarker - i + 1)*arucoLen + (yNumMarker - i)*sepLen;
-        
-        x_tr = j*arucoLen + (j - 1)*sepLen;
-        y_tr = (yNumMarker - i + 1)*arucoLen + (yNumMarker - i)*sepLen;
-        
-        x_br = j*arucoLen + (j - 1)*sepLen;
-        y_br = (yNumMarker - i)*arucoLen + (yNumMarker - i)*sepLen;
-        
-        x_bl = (j-1)*arucoLen + (j - 1)*sepLen;
-        y_bl = (yNumMarker - i)*arucoLen + (yNumMarker - i)*sepLen;
-        
-        markerCorner = [
-            x_tl, y_tl;
-            x_tr, y_tr;
-            x_br, y_br;
-            x_bl, y_bl;
-            ];
-        
-        ind = ind + 1;
-        markerCornerCell(ind) = {markerCorner};
-    end
-end
-
+%undistort image
 imgUndistort = undistortImage(img, cameraParams);
 
-
-%find the ArUco tags in the image
+%find the ArUco markers in the image
 [idsFound, markerCornFound, imgOut] = ArucoPixDect(imgUndistort);
 
-numMarkers = length(idsFound);
+%actual number of markers found in image
+numMarkersFound = length(idsFound);
 
-%if less than expected tags found, then skip image
-if numMarkers < 0.2*numMarkersExp
+%Need atleast two markers to be found
+if numMarkersFound < 2
     found = false;
     rotMat = eye(3);
     trans = zeros(1,3);
     return;
 end
 
-
-actMarkerCornerCell = cell(numMarkers, 1);
+%store the actual marker corners for the IDs found
+actMarkerCornerCell = cell(numMarkersFound, 1);
 
 %only keep the 3D points markers which are in the markerID list
-for i = 1:numMarkers
+for i = 1:numMarkersFound
     actMarkerCornerCell(i) = markerCornerCell(idsFound(i)+1);
 end
 
-%convert the cell array into a matrix of 3D positions
-markerPatPts = zeros(numMarkers*4, 2);
+%convert the cell array into a matrix of 2D positions on planar board
+markerPatPts = zeros(numMarkersFound*4, 2);
 
-for i = 1:numMarkers
+for i = 1:numMarkersFound
     curCorner =  actMarkerCornerCell{i};
     markerPatPts((i-1)*4 + 1: 4*i, :) = curCorner;
 end
 
-markerImgPts = zeros(4*numMarkers, 2);
+markerImgPts = zeros(4*numMarkersFound, 2);
 
 %organise the corresponding image coordinates to match each marker corner
-%to its 3D position.
-for i = 1:numMarkers
+%to its 2D position.
+for i = 1:numMarkersFound
     corners = markerCornFound(i,:);
     
     uPts = corners(1:2:end);
@@ -77,9 +63,8 @@ for i = 1:numMarkers
     markerImgPts((i-1)*4 + 1 : 4*i, :) = [uPts', vPts'];
 end
 
-
+%intrinsic matrix
 K = cameraParams.IntrinsicMatrix';
-
 
 %IPPE SOLUTION
 imgPointsHom = [markerImgPts'; ones(1,size(markerImgPts,1))];
@@ -97,7 +82,6 @@ opts.withPoseRefinement = true;
 %error
 rotMat = refinedPoses.R1; %rotations of extrinsic (3x3)
 trans = (refinedPoses.t1)'; %translations of extrinsic (3x1)
-
 
 found = true;
 

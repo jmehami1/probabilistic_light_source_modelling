@@ -41,6 +41,9 @@ switch (meanType)
     case 2
         meanfunc = @meanLightSrc;
         meanHyper = [1,1,1];
+    case 3
+        meanfunc = @meanLightSrcExp;
+        meanHyper = [1,1,1];
     otherwise
         meanfunc = @meanLightSrc;
         meanHyper = [1,1,1];
