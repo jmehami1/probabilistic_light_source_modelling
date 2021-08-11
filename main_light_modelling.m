@@ -10,24 +10,27 @@
 close all;
 clear;
 
-%robotics toolbox for visualising axes
-run(['rvctools' filesep 'startup_rvc.m']);
+%external library directory
+addpath('ext_lib');
+
+%robotics toolbox
+run(['ext_lib', filesep, 'rvctools', filesep, 'startup_rvc.m']);
 
 %yaml reader package
-addpath(genpath('yamlmatlab-master'));
+addpath(genpath(['ext_lib', filesep, 'yamlmatlab-master']));
+
+%GPML toolbox
+run(['ext_lib', filesep, 'gpml-matlab-master', filesep, 'startup.m']);
+
+%Better pose estimation of a planar board
+addpath(genpath(['ext_lib', filesep, 'IPPE']));
 
 %code for this project
 addpath('src_code');
 
-%GPML toolbox
-run(['gpml-matlab-master', filesep, 'startup.m']);
-
-%Better pose estimation of a planar board
-addpath(genpath('IPPE'));
-
 
 %parameter file
-paramFile = ['parameter_files', filesep, 'light_source_modelling.yaml'];
+paramFile = ['parameter_files', filesep, 'light_modelling.yaml'];
 if ~exist(paramFile, 'file')
     error("YAML parameter file not found");
 end
@@ -38,9 +41,8 @@ end
 
 paramYaml = yaml.ReadYaml(paramFile);
 displayOn = paramYaml.DisplayOn;
-numLines = paramYaml.NumLines;
 usingBlackfly = paramYaml.UsingBlackFly;
-usingTarget = paramYaml.UsingCircularTarget;
+% usingTarget = paramYaml.UsingCircularTarget;
 usingTestData = paramYaml.UseTestData;
 
 %STD in the radiance measurements
@@ -51,7 +53,7 @@ stdRadianceNoise = paramYaml.sigmaRadianceNoise;
 IMG_ON_PLATFORM = paramYaml.IMG_ON_PLATFORM;
 
 %maximum pixel intensity for uint14;
-maxIntUint14 = 2^14 - 1;
+maxIntUint14 = uint16(2^14 - 1);
 
 %% Directories and files
 
@@ -212,8 +214,8 @@ intrLS = cameraIntrinsics([1, fy], [realmin,v0],[rowsLS,colsLS], 'RadialDistorti
 cameraParamLS = cameraParameters('IntrinsicMatrix', intrLS.IntrinsicMatrix, 'ImageSize', [rowsLS,colsLS], 'RadialDistortion', [K1,K2,K3], 'TangentialDistortion', [P1,P2]);
 
 %intrinsic matrix of line-scan camera
-K_LS = intrLS.IntrinsicMatrix';
-K_LS(1,3) = 0;
+kLS = intrLS.IntrinsicMatrix';
+kLS(1,3) = 0;
 
 %plot line-scan camera in simulator figure w.r.t to frame camera
 figure(figSim);
@@ -264,7 +266,7 @@ numMarkersExp = paramYaml.NumberExpectedMarker;
 
 %intrinsic object for the RGB camera
 frameIntrinsic = cameraIntrinsics(thetaFrameintr(1:2),thetaFrameintr(3:4), frameImgSize);
-K_F = frameIntrinsic.IntrinsicMatrix;
+kFrame = frameIntrinsic.IntrinsicMatrix';
 
 %store all the poses of each found pattern
 extPosePattern = zeros(4,4,numImages);
@@ -296,11 +298,14 @@ if displayOn
     boardDispCheck.Callback = @(src, eventData) boardDispCheck_callback(src, eventData, fillHandleCell);
 end
 
+% 2D marker corner positions in world coordinates (metres)
+markerCornerCell = ArUcoBoardMarkerCornersCell(0, xNumMarker, yNumMarker, arucoLen, sepLen);
+
 
 %loop through each image and get pose of board using ArUco pattern
 for imgLoop = 1:numImages
     
-    [rotMat, trans, found, img] = ArucoPosEst(imagesFrame{imgLoop}, xNumMarker, yNumMarker, arucoLen, sepLen, numMarkersExp, cameraParamF);
+    [rotMat, trans, found, imgDisp] = ArucoPosEst(imagesFrame{imgLoop}, markerCornerCell, cameraParamF);
     
     if ~found
         continue;
@@ -318,7 +323,9 @@ for imgLoop = 1:numImages
     if displayOn
         figure(figFrameImg);
         clf(figFrameImg);
-        imshow(img); hold on;
+        imshow(imgDisp); hold on;
+        Plot3DAxis2Image(extPosePattern(:,:,imgLoop), arucoLen, kFrame, frameImgSize, []);
+        
         drawnow();
         
         %edge points transformed into the frame camera c.f
@@ -354,16 +361,18 @@ fprintf('Done\n');
 
 %% Get normalised line-scan image coordinates and their normalised radiance
 
+fprintf('Normalising radiance of hyperspectral images...');
+
 
 % relevant pixel locations in line-scan image
 bandStart = 40;
 bandEnd = 203;
 hypBands = bandStart:bandEnd;
-numBands = 146;
+numBands = length(hypBands);
 
 
 normPtsLSCell = cell(1,numImages);
-normRadiance_Cell = cell(numBands,numImages);
+normRadiImgCell = cell(1,numImages);
 
 for imgLoop = 1:numImages
     curImg = imagesLS{imgLoop};
@@ -374,18 +383,26 @@ for imgLoop = 1:numImages
     
     %determine normalised pixel coordinates
     imgLineHom = [imgLine'; ones(1,length(imgLineDist(:,1)))];
-    normPtImgLS = K_LS\imgLineHom;
+    normPtImgLS = kLS\imgLineHom;
     normPtsLSCell(imgLoop) = {normPtImgLS'};
     
-    %for each band, determine the normalised radiance
-    for bandLoop = 1:numBands
-        pixelInten = curImg(hypBands(bandLoop), vImgLineDist);
-        normRadianceBand = double(pixelInten - imageDark(hypBands(bandLoop), vImgLineDist))...
-            ./double(maxIntUint14 - imageDark(hypBands(bandLoop), vImgLineDist));
-        
-        normRadiance_Cell(bandLoop, imgLoop) = {normRadianceBand'};
-    end
+    %normalise pixel radiance values
+    normRadiImg = NormaliseRadianceBands(curImg, maxIntUint14.*ones(size(curImg), 'uint16'), imageDark, bandStart, bandEnd);
+    normRadiImg = normRadiImg(hypBands, :);
+    
+    normRadiImgCell(imgLoop) = {normRadiImg};
+    
+%     %for each band, determine the normalised radiance
+%     for bandLoop = 1:numBands
+%         pixelInten = curImg(hypBands(bandLoop), vImgLineDist);
+%         normRadianceBand = double(pixelInten - imageDark(hypBands(bandLoop), vImgLineDist))...
+%             ./double(maxIntUint14 - imageDark(hypBands(bandLoop), vImgLineDist));
+%         
+%         normRadiance_Cell(bandLoop, imgLoop) = {normRadianceBand'};
+%     end
 end
+
+fprintf('Done\n');
 
 %% Determine 3D location of pixels on planar target diffuse board
 
@@ -408,6 +425,8 @@ end
 for imgLoop = 1:numImages
     %normalised points for current image
     normPtImgLS = normPtsLSCell{imgLoop};
+    
+    curNormRadiImg = normRadiImgCell{imgLoop};
     
     %pose of target w.r.t to frame camera c.f
     T_tar_2_F = extPosePattern(:,:,imgLoop)*T_target_2_board;
@@ -435,14 +454,13 @@ for imgLoop = 1:numImages
         dispPtCount = 0;
     end
     
-    
     %loop through points for current image and save 3D point location,
     %surface normal at that point, and band reflectances
     for ptLoop = 1:numPts
         normPtLS = normPtImgLS(ptLoop,:);
         
         %get intersection of pixel ray to target plane
-        [pntTargetLS, validIntersection] =  camerapixelrayintersectplane(normPtLS, tarSurfNorm, ptOnTarget);
+        [pntTargetLS, validIntersection] =  CameraPixelRayIntersectPlane(normPtLS, tarSurfNorm, ptOnTarget);
                         
         %point does not intersect plane
         if ~validIntersection
@@ -455,12 +473,7 @@ for imgLoop = 1:numImages
         
         numPtsCount = numPtsCount + 1;
         
-        %loop through bands for current point and save normalised radiance
-        %values
-        for bandLoop = 1:numBands
-            ptNormRadiance = normRadiance_Cell{bandLoop, imgLoop};
-            ptsNormRadianceTarget(numPtsCount, bandLoop) = ptNormRadiance(ptLoop);
-        end
+        ptsNormRadianceTarget(numPtsCount, :) = curNormRadiImg(:,ptLoop)';
         
         %store surface normal and 3D point in frame camera c.f
         ptsSurfNorm(numPtsCount,:) = T_tar_2_F(1:3,3)';
@@ -475,7 +488,7 @@ for imgLoop = 1:numImages
     %display projected line onto image
     if displayOn
         %project 3D line points and radiance to 2D image pixels
-        lineImgPts = projectPoints(targetPtsFrameRadiance, K_F',eye(4), [], frameImgSize);
+        lineImgPts = projectPoints(targetPtsFrameRadiance, kFrame,eye(4), [], frameImgSize);
         
         
         x = lineImgPts(:,1)';
@@ -527,8 +540,9 @@ ptsFrameHom = [ptsOnTarget'; ones(1,length(ptsOnTarget(:,1)))];
 %Transform points to LS C.F
 ptsLSHom = T_F_2_LS*ptsFrameHom;
 
-%pose of light source w.r.t to LS
-% poseLightSrcLS = T_F_2_LS*T_S_2_F;
+% %pose of light source w.r.t to LS
+% T_S_2_LS = T_F_2_LS*T_S_2_F;
+% T_LS_2_S = T_S_2_LS\eye(4);
 
 %Create dense mesh of points using the edges of the measured line-scan
 %points
@@ -554,7 +568,8 @@ ptsTestLightSrcHom = T_S_2_F\ptsTestFrameHom;
 ptsTestLightSrc = ptsTestLightSrcHom(1:3, :);
 
 %Training points without radiant intensity
-[ptsRadius,ptsTheta] = cart2rtlightsrc(ptsTestLightSrc);
+[ptsRadius,ptsTheta] = cart2sphZ(ptsTestLightSrc(1,:), ptsTestLightSrc(2,:), ptsTestLightSrc(3,:));
+% = cart2rtlightsrc(ptsTestLightSrc);
 testingX = [ptsRadius', ptsTheta'];
 
 %Reshape the testing points in the frame camera C.F. into a mesh
@@ -603,7 +618,9 @@ ptsTestLightSrcHom = T_S_2_F\ptsFrameHom;
 ptsLightSrc = ptsTestLightSrcHom(1:3, :);
 
 %Training points without radiant intensity
-[ptsRadius,ptsTheta] = cart2rtlightsrc(ptsLightSrc);
+% [ptsRadius,ptsTheta] = cart2rtlightsrc(ptsLightSrc);
+[ptsRadius,ptsTheta] = cart2sphZ(ptsLightSrc(1,:), ptsLightSrc(2,:), ptsLightSrc(3,:));
+
 trainingXY = [ptsRadius', ptsTheta'];
 
 %radiant intensity which is actually measured by line-scan camera
@@ -638,7 +655,7 @@ if exist([resultDir, filesep, 'gp_lightsrc_optm.mat'], 'file')
         hypOpt = hypOptCell{bandLoop};
         
         %Build zero-mean GP model
-        [mu, varMu] = LightSrcOptmGP(2, trainingXY, testingX, downSamplingGP, 100000, stdRadianceNoise, false, hypOpt);
+        [mu, varMu] = LightSrcOptmGP(3, trainingXY, testingX, downSamplingGP, 100000, stdRadianceNoise, false, hypOpt);
         
         radIntVP_GP(:,:,bandLoop) = reshape(mu,rows);
         varBand(bandLoop) = {varMu};
@@ -649,7 +666,7 @@ else
         trainingXY(:,3) = radIntVP_Meas(:, bandLoop);
         
         %Build zero-mean GP model
-        [mu, varMu, hypOpt] = LightSrcOptmGP(2, trainingXY, testingX, downSamplingGP, 100000, stdRadianceNoise, false);
+        [mu, varMu, hypOpt] = LightSrcOptmGP(3, trainingXY, testingX, downSamplingGP, 100000, stdRadianceNoise, false);
         
         radIntVP_GP(:,:,bandLoop) = reshape(mu,rows);
         varBand(bandLoop) = {varMu};
@@ -657,9 +674,20 @@ else
         fprintf('Optimised band %i of %i\n', bandLoop, numBands);
     end
     
-    save([resultDir, filesep, 'gp_lightsrc_optm.mat'], 'hypOptCell', 'downSamplingGP');
+    save([resultDir, filesep, 'gp_lightsrc_optm.mat'], 'hypOptCell', 'downSamplingGP', 'trainingXY');
     
 end
+
+
+%% Plot the hyperparameters across the bands
+
+% hyperParamGP = zeros(numBands, 3);
+% 
+% for bandLoop = 1:numBands
+%     hyperParamGP(bandLoop, :) = exp(hypOptCell{bandLoop}.mean);
+% end
+
+
 %% Plot the line-scan view-plane to compare results
 
 cab(figSim);

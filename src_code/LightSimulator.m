@@ -1,6 +1,10 @@
 classdef LightSimulator < handle
     %Class used to simulate a near-field non-isotropic disk light source
-    %which is placed an an environment relative to a frame camera origin
+    %which is placed in an environment relative to a frame camera origin
+    %with a line-scan hyperspectral camera
+    
+    %Author: Jasprabhjit Mehami, 13446277
+    
     
     properties(Access = private)
         %Pose of source w.r.t to frame camera
@@ -21,70 +25,92 @@ classdef LightSimulator < handle
         targetScat
         RIDspline
         realRID
+        T_F_2_S
     end
     
     methods
         function obj = LightSimulator(varargin)
             
-            if nargin == 9
+            %simulator with real RID in figure
+            if nargin == 8
                 %Constuctor of class
                 obj.ligSourLoc = varargin{1};
                 obj.ligSourOrien = varargin{2};
                 obj.ligSourDirVec = varargin{2}*[0;0;1];
                 obj.maxRadiantInt = varargin{3};
-                obj.mu = varargin{4};
-                obj.rAtt = varargin{5};
-                obj.distFromSrc = varargin{6};
-                obj.fig = varargin{7};
-                obj.surfDir = varargin{8};
-                obj.RIDspline = varargin{9};
-                
-                %plot light source and its directional planar slice (slice will
-                %not be visible on start up)
-                obj.SetupSimulatorFigure();
-                obj.PlotLightSource();
-%                 obj.PlotRadiantSlice();
-
-                obj.realRID = true;
-            
-            elseif nargin == 8
-                %Constuctor of class
-                obj.ligSourLoc = varargin{1};
-                obj.ligSourOrien = varargin{2};
-                obj.ligSourDirVec = varargin{2}*[0;0;1];
-                obj.maxRadiantInt = varargin{3};
-                obj.mu = varargin{4};
-                obj.rAtt = varargin{5};
-                obj.distFromSrc = varargin{6};
-                obj.fig = varargin{7};
-                obj.surfDir = varargin{8};
-                
-                %plot light source and its directional planar slice (slice will
-                %not be visible on start up)
-                obj.SetupSimulatorFigure();
-                obj.PlotLightSource();
-%                 obj.PlotRadiantSlice();
-            elseif nargin == 6
-                %Constuctor of class
-                obj.ligSourLoc = varargin{1};
-                obj.ligSourOrien = varargin{2};
-                obj.ligSourDirVec = varargin{2}*[0;0;1];
-                obj.maxRadiantInt = varargin{3};
-                obj.mu = varargin{4};
-                obj.rAtt = varargin{5};
+                obj.rAtt = varargin{4};
+                obj.mu = varargin{5};
                 obj.fig = varargin{6};
+                obj.surfDir = varargin{7};
+                obj.RIDspline = varargin{8};
                 
+                obj.realRID = true;
+                
+                T_S_2_F = [obj.ligSourOrien, obj.ligSourLoc; 0,0,0,1];
+                obj.T_F_2_S = T_S_2_F\eye(4);
+                
+                %plot light source and its directional planar slice (slice will
+                %not be visible on start up)
+                obj.SetupSimulatorFigure();
                 obj.PlotLightSource();
-
-            elseif nargin == 5
-                %Constuctor of class
-                obj.ligSourLoc = varargin{1};
-                obj.ligSourOrien = varargin{2};
-                obj.ligSourDirVec = varargin{2}*[0;0;1];
-                obj.maxRadiantInt = varargin{3};
-                obj.mu = varargin{4};
-                obj.rAtt = varargin{5};
+                obj.PlotRadiantSlice();
                 
+                
+                %             if nargin == 8
+                %                 %Constuctor of class
+                %                 obj.ligSourLoc = varargin{1};
+                %                 obj.ligSourOrien = varargin{2};
+                %                 obj.ligSourDirVec = varargin{2}*[0;0;1];
+                %                 obj.maxRadiantInt = varargin{3};
+                %                 obj.mu = varargin{4};
+                %                 obj.rAtt = varargin{5};
+                %                 obj.fig = varargin{6};
+                %                 obj.surfDir = varargin{7};
+                %                 obj.RIDspline = varargin{8};
+                %
+                %                 obj.realRID = true;
+                %
+                %
+                %                 T_S_2_F = [obj.ligSourOrien, obj.ligSourLoc; 0,0,0,1];
+                %                 obj.T_F_2_S = T_S_2_F\eye(4);
+                %
+                %
+                %                 %plot light source and its directional planar slice (slice will
+                %                 %not be visible on start up)
+                %                 obj.SetupSimulatorFigure();
+                %                 obj.PlotLightSource();
+                %                 obj.PlotRadiantSlice();
+                %
+                %
+                %             elseif nargin == 7
+                %                 %Constuctor of class
+                %                 obj.ligSourLoc = varargin{1};
+                %                 obj.ligSourOrien = varargin{2};
+                %                 obj.ligSourDirVec = varargin{2}*[0;0;1];
+                %                 obj.maxRadiantInt = varargin{3};
+                %                 obj.mu = varargin{4};
+                %                 obj.rAtt = varargin{5};
+                %                 obj.fig = varargin{7};
+                %                 obj.surfDir = varargin{8};
+                %
+                %                 %plot light source and its directional planar slice (slice will
+                %                 %not be visible on start up)
+                %                 obj.SetupSimulatorFigure();
+                %                 obj.PlotLightSource();
+                %                 %                 obj.PlotRadiantSlice();
+                %             elseif nargin == 6
+                %                 %Constuctor of class
+                %                 obj.ligSourLoc = varargin{1};
+                %                 obj.ligSourOrien = varargin{2};
+                %                 obj.ligSourDirVec = varargin{2}*[0;0;1];
+                %                 obj.maxRadiantInt = varargin{3};
+                %                 obj.mu = varargin{4};
+                %                 obj.rAtt = varargin{5};
+                %                 obj.fig = varargin{6};
+                %
+                %                 obj.PlotLightSource();
+                %
+                % Simulator with real measurements of different bands in figure
             elseif nargin == 7
                 %Constuctor of class
                 obj.ligSourLoc = varargin{1};
@@ -98,6 +124,26 @@ classdef LightSimulator < handle
                 
                 obj.PlotLightSource();
                 obj.PlotTargetPts();
+                
+                % Simulator with Cosine RID without figure
+            elseif nargin == 5
+                %Constuctor of class
+                obj.ligSourLoc = varargin{1};
+                obj.ligSourOrien = varargin{2};
+                obj.ligSourDirVec = varargin{2}*[0;0;1];
+                obj.maxRadiantInt = varargin{3};
+                obj.mu = varargin{4};
+                obj.rAtt = varargin{5};
+                obj.realRID = false;
+                % simulator no RID in figure to plot light source
+            elseif nargin == 3
+                %Constuctor of class
+                obj.ligSourLoc = varargin{1};
+                obj.ligSourOrien = varargin{2};
+                obj.ligSourDirVec = varargin{2}*[0;0;1];
+                obj.fig = varargin{3};
+                obj.realRID = false;
+                obj.PlotLightSource();
             else
                 error("Wrong number of inputs into class");
             end
@@ -112,7 +158,7 @@ classdef LightSimulator < handle
             intenFirstBand = obj.targetbandInten(:,1);
             
             obj.targetScat = scatter3(X, Y, Z, 5, intenFirstBand, 'filled'); hold on;
-            caxis([0, max(intenFirstBand, [], 'all')])        
+            caxis([0, max(intenFirstBand, [], 'all')])
             colormap(jet(1000)); colorbar;
             
             %band slider
@@ -125,14 +171,14 @@ classdef LightSimulator < handle
                 'String',num2str(obj.numBands),'BackgroundColor',bgcolor);
             uicontrol('Parent',obj.fig,'Style','text','Position',[150,90,200,23],...
                 'String','Band','BackgroundColor',bgcolor);
-%             disp_dist = uicontrol('Parent',obj.fig,'Style','text','Position',[200,145,50,20],...
-%                 'String', num2str(obj.distFromSrc),'BackgroundColor', [1,1,1]);
+            %             disp_dist = uicontrol('Parent',obj.fig,'Style','text','Position',[200,145,50,20],...
+            %                 'String', num2str(obj.distFromSrc),'BackgroundColor', [1,1,1]);
             %callback function at the end of the script
             slider_band.Callback = @(src, eventData) obj.band_callback(src, eventData);
             
             drawnow();
         end
-            
+        
         
         
         %         function obj = LightSimulator(ligSourLoc_,ligSourOrien_, maxRadiantInt_, mu_, rAtt_, distFromSrc_, fig_, surfDir_)
@@ -171,32 +217,32 @@ classdef LightSimulator < handle
             
             figure(obj.fig);
             
-            %create slice mesh points
+            %create slice mesh points in light source c.f
             x = linspace(-0.5, 0.5, 100);
             y = linspace(-0.5, 0.5, 100);
             z = obj.distFromSrc;
             
             [X, Y, Z] = meshgrid(x,y,z);
             
-            %rotate mesh using light source principal direction
+            %Transform mesh to frame c.f
             XYZrot = [X(:),Y(:),Z(:)]*obj.ligSourOrien';
-            
             rows = size(X);
-            
             X = reshape(XYZrot(:,1),rows) + obj.ligSourLoc(1);
             Y = reshape(XYZrot(:,2),rows) + obj.ligSourLoc(2);
             Z = reshape(XYZrot(:,3),rows) + obj.ligSourLoc(3);
             
+            %radiant intensity magnitude on mesh
             radIntMag = RadiantIntensityMesh(obj, X, Y, Z);
             
+            %visualise radiant intensity in simulator
             obj.surfDir.XData = X;
             obj.surfDir.YData = Y;
             obj.surfDir.ZData = Z;
             obj.surfDir.CData = radIntMag;
             obj.surfDir.EdgeColor = 'none';
             
-            colormap(hot);
-             colorbar; caxis([0, obj.maxRadiantInt]);
+            colormap(hot(100000));
+            colorbar; caxis([0, obj.maxRadiantInt]);
             
             axis equal; drawnow();
         end
@@ -260,51 +306,74 @@ classdef LightSimulator < handle
         
         function [radIntMag, radIntVec] = RadiantIntensityMesh(obj, X, Y, Z)
             %calculate the radiant intensity of the light source for a
-            %given mesh of points
+            %given mesh of points. The points should be w.r.t to the frame
+            %camera coordinate frame.
             [rows, cols] = size(X);
             
-            radIntMag = zeros(rows, cols);
-            radIntVec = zeros(rows, cols, 3);
+            pts = [X(:),Y(:),Z(:)]';
             
-            %pre-subtract for creating light vector
-            X = obj.ligSourLoc(1) - X;
-            Y = obj.ligSourLoc(2) - Y;
-            Z = obj.ligSourLoc(3) - Z;
             
-            for i = 1:rows
-                for j = 1:cols
-                    ligVec = [ X(i,j); Y(i,j); Z(i,j)];
-                    
-                    
-                    if obj.realRID
-                        S_P =  obj.NonIsotropicDiskLightModelRID(obj.ligSourDirVec, obj.maxRadiantInt, obj.mu, ligVec, obj.rAtt, obj.RIDspline);
-                    else
-                        S_P =  obj.NonIsotropicDiskLightModel(obj.ligSourDirVec, obj.maxRadiantInt, obj.mu, ligVec, obj.rAtt);
-                    end
-                    
-%                     S_P =  obj.NonIsotropicDiskLightModel(obj.ligSourDirVec, obj.maxRadiantInt, obj.mu, ligVec, obj.rAtt);
-                    
-                    radIntMag(i,j) = norm(S_P);
-                    
-                    radIntVec(i,j,:) = S_P;
-                end
+            if obj.realRID
+                S_P =  obj.NonIsotropicDiskLightModelRID(obj.maxRadiantInt, obj.mu, pts, obj.ligSourLoc, obj.rAtt, obj.RIDspline, obj.T_F_2_S);
+            else
+                
+                ligVec =  obj.ligSourLoc - pts;
+                
+                S_P =  obj.NonIsotropicDiskLightModel(obj.ligSourDirVec, obj.maxRadiantInt, obj.mu, ligVec, obj.rAtt);
             end
+            
+            radIntMag = vecnorm(S_P, 2, 1);
+            radIntMag = reshape(radIntMag(1,:),[rows, cols]);
+            
+            radIntVec = reshape(S_P, [rows, cols, 3]);
+            
+            
+            
+            %             %pre-subtract for creating light vector
+            %             X = obj.ligSourLoc(1) - X;
+            %             Y = obj.ligSourLoc(2) - Y;
+            %             Z = obj.ligSourLoc(3) - Z;
+            %
+            %             for i = 1:rows
+            %                 for j = 1:cols
+            %                     ligVec = [ X(i,j); Y(i,j); Z(i,j)];
+            %
+            %
+            %                     if obj.realRID
+            %                         S_P =  obj.NonIsotropicDiskLightModelRID(obj.ligSourDirVec, obj.maxRadiantInt, ligVec, obj.rAtt, obj.RIDspline, obj.T_F_2_S);
+            %                     else
+            %                         S_P =  obj.NonIsotropicDiskLightModel(obj.ligSourDirVec, obj.maxRadiantInt, obj.mu, ligVec, obj.rAtt);
+            %                     end
+            %
+            %                     %                     S_P =  obj.NonIsotropicDiskLightModel(obj.ligSourDirVec, obj.maxRadiantInt, obj.mu, ligVec, obj.rAtt);
+            %
+            %                     radIntMag(i,j) = norm(S_P);
+            %
+            %                     radIntVec(i,j,:) = S_P;
+            %
+            %                     if any(radIntMag < 0)
+            %                         h = 1
+            %                     end
+            %                 end
+            %             end
         end
         
         function [radIntMag, radIntVec] = RadiantIntensityAtPoint(obj, pnt)
             %calculate the radiant intensity at a given point from the
             %source
             
-            %negative of light vector
-            ligVec = [
-                obj.ligSourLoc(1) - pnt(1);
-                obj.ligSourLoc(2) - pnt(2);
-                obj.ligSourLoc(3) - pnt(3);
-                ];
             
             if obj.realRID
-                radIntVec =  obj.NonIsotropicDiskLightModelRID(obj.ligSourDirVec, obj.maxRadiantInt, obj.mu, ligVec, obj.rAtt, obj.RIDspline);
+                radIntVec =  obj.NonIsotropicDiskLightModelRID(obj.maxRadiantInt, obj.mu, pnt, obj.ligSourLoc, obj.rAtt, obj.RIDspline, obj.T_F_2_S);
             else
+                
+                %negative of light vector
+                ligVec = [
+                    obj.ligSourLoc(1) - pnt(1);
+                    obj.ligSourLoc(2) - pnt(2);
+                    obj.ligSourLoc(3) - pnt(3);
+                    ];
+                
                 radIntVec =  obj.NonIsotropicDiskLightModel(obj.ligSourDirVec, obj.maxRadiantInt, obj.mu, ligVec, obj.rAtt);
             end
             
@@ -390,6 +459,9 @@ classdef LightSimulator < handle
         
         function SetupSimulatorFigure(obj)
             figure(obj.fig);
+            
+            obj.distFromSrc = 0.2;
+            
             %distFromSrc slider
             slider_dist = uicontrol('Parent',obj.fig,'Style','slider','Position',[81,120,300,23],...
                 'value',obj.distFromSrc, 'min', 0, 'max',1, 'SliderStep', [0.1/1, 0.1/1]);
@@ -420,80 +492,60 @@ classdef LightSimulator < handle
             %callback function at the end of the script
             slider_mu.Callback = @(src, eventData) obj.mu_callback(src, eventData, disp_mu);
             
-            
             %checkerbox to turn surface plane visibility on/off
             surfDirDispCheck = uicontrol('Parent',obj.fig,'Style','checkbox', 'String', 'Display Direction Plane', 'Position', [20,45,200,20] );
             surfDirDispCheck.Callback = @(src, eventData) obj.surfDir_visible_callback(src, eventData);
             
         end
-        
-        
     end
     
     
-    
-    
-    
-    
     methods (Static, Access = private)
-         function S_P = NonIsotropicDiskLightModelRID(vDir, Phi0, mu, l, rD, ridSpline)
+        function S_P = NonIsotropicDiskLightModelRID(Phi0, mu, pnt, ligSourLoc, rD, ridSpline, T_F_2_S)
             %The model for a non-istotropic near field disk light model which
-            %includes a cosine RID, and light attenutation modelled by an equation which
+            %includes a real RID and light attenutation modelled by an equation which
             %does not contain a singularity.
             %Inputs:
-            %       vDir - principal direction vector of the light source
             %       Phi0 - maximum radiant intensity along the principal direction
-            %       mu - parameter which alters of the shape of the RID to suit the
-            %       required drop-off with angle theta
-            %       l - light vector from the point-of-interest to the
-            %       source
-            %       rd - effective radius of the disk which alters the shape of the
-            %       attenuation drop-off with distance
+            %       mu - parameter which alters the shape of the RID with
+            %            the elevation angle
+            %       pnt - 3D points w.r.t to frame camera
+            %       rD - effective radius of the disk which alters the shape of the
+            %            attenuation drop-off with distance
+            %       ridSpline - spline model of the RID function w.r.t to
+            %            azimuth angle
+            %       T_F_2_S - Transformation from the frame camera to the
+            %                 light source
             %Output:
-            %       S_P -  radiant intensity from the source to the
-            %       point-of-interest along the light vector.
+            %       S_P - radiant intensity from the source to the
+            %             point-of-interest along the light vector.
             
-            %Author: Jasprabhjit Mehami, 13446277
+            %transform point to light source c.f
+            pntS = T_F_2_S*[pnt;ones(1, size(pnt,2))];
             
-            lnorm = norm(l);
+            %calculate spherical coordinates
+            [r, azi, elev] = cart2sphZ(pntS(1,:), pntS(2,:), pntS(3,:));
             
-            %transform light vector to light source c.f.
+            %determine RID value using the spherical angles
+            ridAzi = fnval(ridSpline, azi);
+            ridElev = cos(elev).^mu;
             
+            PhiRID = Phi0 .* ridAzi .* ridElev;
             
-            
-            %normalise light vector (direction vector of l)
-             dir_l = -l./lnorm;
-            
-                        
-            l_dot_vDir = dot(-l,vDir);
-            
-            if (l_dot_vDir < 0)
-                l_dot_vDir = 0;
-            end
-            
-            theta_l = acos(l_dot_vDir ./ lnorm);
-
-            if dir_l(1) < vDir(1)
-                theta_l = -theta_l;
-            end
-            
-            
-            %RID
-            PhiTheta = Phi0 * fnval(ridSpline, theta_l);
-            
-            %attenuation
-            f_att = 1/((lnorm/rD + 1)^2);
+            %light vector. This is actually defined as starting from the
+            %surface point going to the light source, but when simulating
+            %the other direction is useful.
+            l = pnt - ligSourLoc;
             
             %normalise light vector (direction vector of l)
-            dir_l = -l./lnorm;
+            dir_l = l./r;
+            
+            %attenuation function
+            f_att = 1./((r./rD + 1).^2);
             
             %radiant intensity vector from the source to the
-            %point-of-interest. For plotting we just use the vector, but
-            %when the ray interacts with a surface, the negative of the
-            %vector must be taken to ensure the dot-product between them is
-            %positive.
-            S_P = PhiTheta .* f_att .* dir_l;
-            
+            %point-of-interest.
+            S_P = PhiRID .* f_att .* dir_l;
         end
         
         
@@ -516,19 +568,16 @@ classdef LightSimulator < handle
             
             %Author: Jasprabhjit Mehami, 13446277
             
-            lnorm = norm(l);
+            lnorm = vecnorm(l,2,1);
             
-            l_dot_vDir = dot(-l,vDir);
+            l_dot_vDir = dot(-l,vDir.*ones(size(l)), 1);
             
-            if (l_dot_vDir < 0)
-                l_dot_vDir = 0;
-            end
             
             %RID
-            PhiTheta = Phi0 * (l_dot_vDir/lnorm)^mu;
+            PhiTheta = Phi0 .* (l_dot_vDir./lnorm).^mu;
             
             %attenuation
-            f_att = 1/((lnorm/rD + 1)^2);
+            f_att = 1./((lnorm./rD + 1).^2);
             
             %normalise light vector (direction vector of l)
             dir_l = -l./lnorm;

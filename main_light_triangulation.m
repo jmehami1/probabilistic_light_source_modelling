@@ -21,7 +21,7 @@ addpath(genpath('parameter_files'));
 addpath('src_code');
 
 %parameter file
-paramFile = ['parameter_files', filesep, 'point_light_triangulation.yaml'];
+paramFile = ['parameter_files', filesep, 'light_triangulation.yaml'];
 if ~exist(paramFile, 'file')
     error("YAML parameter file not found");
 end
