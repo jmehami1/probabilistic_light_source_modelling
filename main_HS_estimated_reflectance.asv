@@ -207,18 +207,16 @@ numMarkersExp = paramYaml.NumberExpectedMarker;
 frameIntrinsic = cameraIntrinsics(thetaFrameintr(1:2),thetaFrameintr(3:4), frameImgSize);
 K_frame = frameIntrinsic.IntrinsicMatrix';
 
-extMatFile = [sourDir, filesep, 'imgExtrinsicPose.mat'];
+%store all the poses of each found pattern
+extPosePattern = zeros(4,4,numImages);
+
+if displayOn
+    fig = figure('Name','ChArUco pattern pose');
+end
+
+extMatFile = [sourDir, filesep, 'imgExtrinsic.mat'];
 
 if hasOpenCV
-    
-    %store all the poses of each found pattern
-    extPosePattern = zeros(4,4,numImages);
-    
-    if displayOn
-        fig = figure('Name','ChArUco pattern pose');
-    end
-    
-    
     % 2D marker corner positions in world coordinates (metres)
     markerCornerCell = ArUcoBoardMarkerCornersCell(1, xNumMarker, yNumMarker, arucoLen, sepLen);
     
@@ -256,6 +254,7 @@ if hasOpenCV
     extPosePattern = extPosePattern(:,:,1:numGoodImg);
  
     save(extMatFile, 'extPosePattern', 'goodImages', 'numGoodImg')
+    
 else
     load(extMatFile);
 end
