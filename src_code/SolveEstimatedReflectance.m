@@ -33,6 +33,7 @@ canBePatch = pixDiffAbs <= maxPixDist;
 patchID = zeros(numPix, 1);
 id = 1;
 patchID(1) = id;
+patchNumPix = zeros(numPix, 1);
 curPatCount = 1;
 
 %assigning a patch ID to each pixel location
@@ -41,11 +42,13 @@ for i = 2:numPix
         if canBePatch(i - 1)
             patchID(i) = id;
         else
+            patchNumPix(id) = curPatCount;
             id = id + 1;
             patchID(i) = id;
             curPatCount = 0;
         end
     else
+        patchNumPix(id) = curPatCount;
         curPatCount = 0;
         id = id + 1;
         patchID(i) = id;
@@ -71,10 +74,8 @@ g_coeff = (dirL_dot_n.*pixSolidAngle)./(pi);
 %specular reflected direction vector (if material was perfect mirror)
 dirR = -dirL - 2.*dot(-dirL,n,2).*n;
 dirR_dot_dirC = dot(dirR, dirC, 2);
+%any negative dot products become zero
 dirR_dot_dirC(dirR_dot_dirC < 0) = 0;
-% NEGATIVE DOT PRODUCT
-
-% M = I./s;
 
 % c_coeff = zeros(numBands, numPix);
 % for bandLoop = 1:numBands
@@ -88,6 +89,21 @@ dirR_dot_dirC(dirR_dot_dirC < 0) = 0;
 %     %not inline with the reflected vector direction, will be attenuated.
 %     c_coeff(bandLoop,:) = dot(dirC, r, 2);
 % end
+
+%solve optimisation across patches
+
+% for patchLoop = 1:numPatch
+%     
+%     numParam = 
+%     
+%    for bandLoop = 1:numBands
+%        
+%        
+%        
+%     
+%    end
+% end
+
 
 %Number of unknown reflectances + unknown specular coefficients + Area of
 %pixel
@@ -113,6 +129,8 @@ for bandLoop = 1:numBands
 end
 
 xOpt = lsqlin(C, d, -eye(numParam,numParam), zeros(numParam,1), [], [], zeros(numParam,1), ones(numParam,1), 0.5.*ones(numParam, 1), optOptions);
+% xOpt = lsqlin(C, d, [], [], [], [], zeros(numParam,1), ones(numParam,1), 0.5.*ones(numParam, 1), optOptions);
+
 
 % xOpt = lsqlin(C, d, [], [], [], [], zeros(numParam, 1), ones(numParam, 1), 0.5.*ones(numParam, 1), optOptions);
 % xOpt = C\d;
