@@ -13,5 +13,5 @@ NumberExpectedMarker: 35
 DisplayOn: false
 UsingBlackFly: true
 UseTestData: true
-sigmaRadianceNoise: 0.1
+sigmaRadianceNoisePercent: 0.05
 HasOpenCV: false

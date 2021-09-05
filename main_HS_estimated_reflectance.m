@@ -28,8 +28,8 @@ addpath(genpath(['ext_lib', filesep, 'Scyllarus']));
 %code for this project
 addpath('src_code');
 
-
-% addpath(genpath(['ext_lib', filesep, 'krebs-reflectance-estimation']));
+addpath(genpath(['ext_lib', filesep, 'krebs-shape-reflectance-estimation']));
+addpath(genpath(['ext_lib', filesep, 'krebs-reflectance-estimation']));
 
 %parameter file
 paramFile = ['parameter_files', filesep, 'HS_estimated_reflectance.yaml'];
@@ -47,7 +47,8 @@ usingTestData = paramYaml.UseTestData;
 hasOpenCV = paramYaml.HasOpenCV;
 
 %STD in the radiance measurements
-stdRadianceNoise = paramYaml.sigmaRadianceNoise;
+stdRadianceNoisePer = paramYaml.sigmaRadianceNoisePercent;
+stdRadianceNoise = (stdRadianceNoisePer/100);
 
 %maximum pixel intensity for uint14;
 maxIntUint14 = 2^14 - 1;
@@ -333,24 +334,25 @@ hypBands = bandStart:bandEnd;
 numBands = length(hypBands);
 numBandPix = 256;
 
-normPtsLSCell = cell(1,numImages);
-normRadianceImgCell = cell(1,numImages);
+RadiImgCell = cell(1,numImages);
+
+
+vImgLineDist = 1:rowsLS; %distorted v component pixel positions on image line
+imgLineDist = [zeros(size(vImgLineDist));vImgLineDist]'; %distorted pixels on image line (u = 0)
+imgLine = undistortPoints(imgLineDist, cameraParamLS); %undistort image line
+
+%determine normalised pixel coordinates
+imgLineHom = [imgLine'; ones(1,length(imgLineDist(:,1)))];
+normPtImgLS = K_LS\imgLineHom;
+
 
 for imgLoop = 1:numImages
     curImg = imagesLS{imgLoop};
+
+    radiImg = curImg - imageDark;%subtract dark reference
+    radiImg = double(radiImg(hypBands, :))./maxIntUint14; %scale down
     
-    vImgLineDist = 1:rowsLS; %distorted v component pixel positions on image line
-    imgLineDist = [zeros(size(vImgLineDist));vImgLineDist]'; %distorted pixels on image line (u = 0)
-    imgLine = undistortPoints(imgLineDist, cameraParamLS); %undistort image line
-    
-    %determine normalised pixel coordinates
-    imgLineHom = [imgLine'; ones(1,length(imgLineDist(:,1)))];
-    normPtImgLS = K_LS\imgLineHom;
-    normPtsLSCell(imgLoop) = {normPtImgLS'};
-    
-    %normalise between dark reference and max intensity of uint14 for
-    %relevant bands    
-    normRadianceImgCell(imgLoop) = {NormaliseRadianceBands(curImg, maxIntUint14.*ones(size(curImg), 'uint16'), imageDark, bandStart, bandEnd)};  
+    RadiImgCell(imgLoop) = {radiImg};
 end
 
 fprintf('Done\n');
@@ -440,12 +442,11 @@ numPixPerLine = zeros(1,numImages);
 numData = 0;
 
 for imgLoop = 1:numImages
-    curNormRadiImg = normRadianceImgCell{imgLoop};
+    curNormRadiImg = RadiImgCell{imgLoop};
     
     figure(figSim);
     
-    normHSPts = normPtsLSCell{imgLoop}';
-    numPts = size(normHSPts,2);
+    numPts = size(normPtImgLS,2);
     
     T_Board_2_F = extPosePattern(:,:,imgLoop);
     T_Board_2_LS = T_F_2_LS*T_Board_2_F;
@@ -471,8 +472,8 @@ for imgLoop = 1:numImages
     %update 3D axis to current extrinsic transformation
     trplot(boardTR, T_Board_2_F);
     
-    transBoard = T_Board_2_LS(1:3, 4);
-    surfNormBoard = T_Board_2_LS(1:3,3);
+%     transBoard = T_Board_2_LS(1:3, 4);
+%     surfNormBoard = T_Board_2_LS(1:3,3);
     
     %cylinder start and end points in the coordinate frame of the line-scan
     %camera
@@ -497,7 +498,7 @@ for imgLoop = 1:numImages
     %trace pixel ray from the line-scan camera to the target frame to
     %determine its 3D location w.r.t LS
     for pixelLoop = 1:numPts
-        pnt = normHSPts(:,pixelLoop);
+        pnt = normPtImgLS(:,pixelLoop);
         
         %intersect ray with cylinder
         [pntLS, valid] = CameraPixelRayIntersectCylinder(pnt', rCyl, xClyStartLS', xCylEndLS');
@@ -528,7 +529,7 @@ for imgLoop = 1:numImages
             ptsBoardSurfNorm(ptCount, :) = surfNormCyl';
             
             
-            curBandRadi = curNormRadiImg(hypBands, pixelLoop);
+            curBandRadi = curNormRadiImg(:, pixelLoop);
             
             numData = numData + 1;
             pixRadianceData(numData, :) = [
@@ -587,9 +588,6 @@ fprintf('Radiant intensity prediction using GP model...');
 %data iterator
 pData = 1;
 
-%Store radiant intensity for each line-image
-radiantIntenCell = cell(1,numImages);
-
 %radiant intensity hypercuber
 radiantIntenHyperCube = zeros(rowsLS, numImages, numBands);
 
@@ -621,16 +619,17 @@ for imgLoop = 1:numImages
     %convert points to spherical coordinates
     [ptsRadius,ptsTheta] = cart2sphZ(ptsLightSrc(1,:), ptsLightSrc(2,:), ptsLightSrc(3,:));
     testingX = [ptsRadius', ptsTheta']; %points used to predict radiant intensity
-        
+    
     %make prediction for each band
     for bandLoop = 1:numBands
         hypOpt = hypOptCell{bandLoop};
+        trainingXY = trainingXYCell{bandLoop};
+        
         %prediction of radiant intensity at location from source
-        [mu, varMu] = LightSrcOptmGP(3, trainingXY, testingX, downSamplingGP, 1000, stdRadianceNoise, false, hypOpt);
+        [mu, varMu] = LightSrcOptmGP(3, trainingXY, testingX, stdRadianceNoise, hypOpt);
         radiantIntLine(bandLoop,:) = mu';
     end
     
-    radiantIntenCell(imgLoop) = {radiantIntLine};
     radiantIntenHyperCube(pixLine, imgLoop, :) = radiantIntLine';
     
     pData = pData + numCurLine; %increment iterator
@@ -643,71 +642,71 @@ fprintf('Done\n');
 
 %% Standardise hyperspectral measurements using white reference
 
-%read the reflectance values for each band of the hyperspectral camera
-%stored in file
-data = readmatrix(whiteStripeReflFile);
-targetReflectances = data(:,2);
-
-
-normWhiteRef = NormaliseRadianceBands(imageWhite, maxIntUint14.*ones(size(imageWhite), 'uint16'), imageDark, bandStart, bandEnd);
-normWhiteRef = normWhiteRef(bandStart:bandEnd,:)';
-whiteRefHyperCube = zeros(numPts,1,numBands);
-whiteRefHyperCube(:,1,:) = normWhiteRef;
-
-T_Board_2_F = extPosePattern(:,:,1);
-T_Board_2_LS = T_F_2_LS*T_Board_2_F;
-
-transBoard = T_Board_2_LS(1:3, 4);
-surfNormBoard = T_Board_2_LS(1:3,3);
-
-normHSPts = normPtsLSCell{1}';
-
-ptsWhiteFrame = zeros(numPts, 3);
-
-%trace pixel ray from the line-scan camera to the target frame to
-%determine its 3D location w.r.t LS
-for pixelLoop = 1:numPts
-    pnt = normHSPts(:,pixelLoop);
-    
-    pntLS = CameraPixelRayIntersectPlane(pnt', surfNormBoard', transBoard');
-    
-    pntF  = T_LS_2_F*[pntLS';1];
-    ptsWhiteFrame(pixelLoop, :) = pntF(1:3);
-end
-
-ptsLightSrc = T_F_2_S*[ptsWhiteFrame'; ones(1,numPts)];
-
-%convert points to spherical coordinates
-[ptsRadius,ptsTheta] = cart2sphZ(ptsLightSrc(1,:), ptsLightSrc(2,:), ptsLightSrc(3,:));
-testingX = [ptsRadius', ptsTheta']; %points used to predict radiant intensity
-
-%store radiant intensity predictions for points
-radiantIntLine = zeros(numBands, numPts);
-
-%make prediction for each band
-for bandLoop = 1:numBands
-    hypOpt = hypOptCell{bandLoop};
-    %prediction of radiant intensity at location from source
-    [mu, varMu] = LightSrcOptmGP(3, trainingXY, testingX, downSamplingGP, 1000, stdRadianceNoise, false, hypOpt);
-    radiantIntLine(bandLoop,:) = mu';
-end
-
-radiantIntenWhiteHyperCube = zeros(numPts,1,numBands);
-
-radiantIntenWhiteHyperCube(:,1,:) = radiantIntLine';
-
-%direction light vector
-ptLigVec = locLigSrc' - ptsWhiteFrame;
-dirLigVec = ptLigVec./vecnorm(ptLigVec, 2, 2);
-
-surfNormal = T_Board_2_F(1:3,3)'.*ones(size(dirLigVec));
-
-dirL_dot_n = dot(surfNormal, dirLigVec, 2);
-
-addpath(genpath(['ext_lib', filesep, 'krebs-reflectance-estimation']));
-
-
-alphaBalFactor = EstimateBalancingFactor(whiteRefHyperCube, radiantIntenWhiteHyperCube, dirL_dot_n, targetReflectances);
+% %read the reflectance values for each band of the hyperspectral camera
+% %stored in file
+% data = readmatrix(whiteStripeReflFile);
+% targetReflectances = data(:,2);
+% 
+% 
+% normWhiteRef = NormaliseRadianceBands(imageWhite, maxIntUint14.*ones(size(imageWhite), 'uint16'), imageDark, bandStart, bandEnd);
+% normWhiteRef = normWhiteRef(bandStart:bandEnd,:)';
+% whiteRefHyperCube = zeros(numPts,1,numBands);
+% whiteRefHyperCube(:,1,:) = normWhiteRef;
+% 
+% T_Board_2_F = extPosePattern(:,:,1);
+% T_Board_2_LS = T_F_2_LS*T_Board_2_F;
+% 
+% transBoard = T_Board_2_LS(1:3, 4);
+% surfNormBoard = T_Board_2_LS(1:3,3);
+% 
+% normHSPts = normPtImgLS{1}';
+% 
+% ptsWhiteFrame = zeros(numPts, 3);
+% 
+% %trace pixel ray from the line-scan camera to the target frame to
+% %determine its 3D location w.r.t LS
+% for pixelLoop = 1:numPts
+%     pnt = normHSPts(:,pixelLoop);
+%     
+%     pntLS = CameraPixelRayIntersectPlane(pnt', surfNormBoard', transBoard');
+%     
+%     pntF  = T_LS_2_F*[pntLS';1];
+%     ptsWhiteFrame(pixelLoop, :) = pntF(1:3);
+% end
+% 
+% ptsLightSrc = T_F_2_S*[ptsWhiteFrame'; ones(1,numPts)];
+% 
+% %convert points to spherical coordinates
+% [ptsRadius,ptsTheta] = cart2sphZ(ptsLightSrc(1,:), ptsLightSrc(2,:), ptsLightSrc(3,:));
+% testingX = [ptsRadius', ptsTheta']; %points used to predict radiant intensity
+% 
+% %store radiant intensity predictions for points
+% radiantIntLine = zeros(numBands, numPts);
+% 
+% %make prediction for each band
+% for bandLoop = 1:numBands
+%     hypOpt = hypOptCell{bandLoop};
+%     %prediction of radiant intensity at location from source
+%     [mu, varMu] = LightSrcOptmGP(3, trainingXY, testingX, downSamplingGP, 1000, stdRadianceNoise, false, hypOpt);
+%     radiantIntLine(bandLoop,:) = mu';
+% end
+% 
+% radiantIntenWhiteHyperCube = zeros(numPts,1,numBands);
+% 
+% radiantIntenWhiteHyperCube(:,1,:) = radiantIntLine';
+% 
+% %direction light vector
+% ptLigVec = locLigSrc' - ptsWhiteFrame;
+% dirLigVec = ptLigVec./vecnorm(ptLigVec, 2, 2);
+% 
+% surfNormal = T_Board_2_F(1:3,3)'.*ones(size(dirLigVec));
+% 
+% dirL_dot_n = dot(surfNormal, dirLigVec, 2);
+% 
+% addpath(genpath(['ext_lib', filesep, 'krebs-reflectance-estimation']));
+% 
+% 
+% alphaBalFactor = EstimateBalancingFactor(whiteRefHyperCube, radiantIntenWhiteHyperCube, dirL_dot_n, targetReflectances);
 
 
 %% Estimate reflectance using Krebs method
@@ -715,55 +714,20 @@ alphaBalFactor = EstimateBalancingFactor(whiteRefHyperCube, radiantIntenWhiteHyp
 cab('figSim');
 
 surfNormal = pixRadianceData(:, 5:7);
-
 ptFrame = pixRadianceData(:, 2:4);
 
 %direction light vector
 ptLigVec = locLigSrc' - ptFrame;
 dirLigVec = ptLigVec./vecnorm(ptLigVec, 2, 2);
-
-%transform pts to light source coordinate frame
-% PtFrameHom = [ptFrame'; ones(1,size(ptFrame,1))];
-% ptsLightSrc = T_F_2_S*PtFrameHom;
-
-%distance from light source to points
-% ptsDistLigSrc = cart2sphZ(ptsLightSrc(1,:), ptsLightSrc(2,:), ptsLightSrc(3,:))';
-    
-%distance from line-scan camera to points
-% locLS = T_LS_2_F(1:3,4);
-% ptViewVec = locLS' - ptFrame;
-% ptsDistLS = vecnorm(ptViewVec,2,2);
-
-%direction camera viewing vector
-% dirViewVec = ptViewVec./ptsDistLS; 
-    
-%length of sector for each pixel projected onto the distance for each
-%point. Assuming a square pixel, calculate the foreshortened area and
-%then find the projected area onto the surface for each pixel.
-% sidePixLS = ptsDistLS.*fovLSPix;
-% pixProjArea = sidePixLS.^2 ./ dot(dirViewVec, surfNormal, 2);
-% pixProjArea(pixProjArea < 0) = 0;
-
-%shading factor of all pixels
-% gVec = ShadingFactorPixels(surfNormal, dirLigVec, ptsDistLigSrc, pixProjArea);
-
-
 dirL_dot_n = dot(surfNormal, dirLigVec, 2);
 
-
-
-% %minimum shading factor (these pixels won't provide enough constraints)
-% Gmin = 0.01;
-% 
-% %mask to remove any pixels with low G
-% Gmask = gVec > Gmin;
-
-%shading factor image
-imageLdotN = zeros(rowsLS, numImages);
+%image of dot product between light source direction and surface normal
+lDotnImg = zeros(rowsLS, numImages);
 
 %iterator
 pData = 1;
 
+%filling lDotnImg for each relevant pixel-band
 for imgLoop = 1:numImages
     numCurLine = numPixPerLine(imgLoop);
     
@@ -775,446 +739,485 @@ for imgLoop = 1:numImages
     pixLine = pixRadianceData(pData:pData + numCurLine - 1, 1);
     pixLdotN = dirL_dot_n(pData:pData + numCurLine - 1);
     
-    imageLdotN(pixLine, imgLoop) = pixLdotN;
-
+    lDotnImg(pixLine, imgLoop) = pixLdotN;
     pData = pData + numCurLine;
 end
 
-imageLdotN(imageLdotN < 0) = 0;
+lDotnImg(lDotnImg < 0) = 0; %ignore any negative dotproduct
 
-figure;imagesc(imageLdotN);
+figure;imagesc(lDotnImg);
 
-binMaskG = imageLdotN > 0;
+%image mask using the dot product image
+binMaskG = lDotnImg > 0;
 
+
+%% Estimate reflectance using Krebs method with shape
+
+fprintf('**********************************\n');
+fprintf('Estimate reflectance using Krebs with shape information method...');
+
+
+[S_krebsShape, k_krebsShape, g_krebsShape] = ReflectanceEstimationKrebs(normRadianceHyperCube,radiantIntenHyperCube, binMaskG, lDotnImg, 3, pi*pi/3600);
+
+fprintf('Done\n');
+
+%% Estimate reflectance krebs no shape information
+
+fprintf('**********************************\n');
+fprintf('Estimate reflectance using Krebs method...');
+
+%radiance with radiant intensity removed
 R_hyperCube = normRadianceHyperCube./radiantIntenHyperCube;
-R_hyperCube(isnan(R_hyperCube)) = 0;
-
-
-[S_new, k_new, g_new] = ReflectanceEstimationKrebs(normRadianceHyperCube,radiantIntenHyperCube, binMaskG, imageLdotN);
-
-rmpath(genpath(['ext_lib', filesep, 'krebs-reflectance-estimation']));
-
-addpath(genpath(['ext_lib', filesep, 'krebs-reflectance-estimationOLD']));
-
+R_hyperCube(isnan(R_hyperCube)) = 0; %ignore any nan
+R_hyperCube(isinf(R_hyperCube)) = 0; %ignore any inf
 
 [S_krebs, g_Krebs, k_krebs] = method_krebs_logversion(R_hyperCube, binMaskG);
 
+fprintf('Done\n');
 
-%% 
+%% Robles least squares patch method
+
+fprintf('**********************************\n');
+fprintf('Estimate reflectance using Robles method...');
+
+normRadianceHyperCubeMasked = bsxfun(@times, normRadianceHyperCube, binMaskG);
+radiantIntenHyperCubeMasked = bsxfun(@times, radiantIntenHyperCube, binMaskG);
+
+[k_robles, g_robles, S_robles] = recover_dichromatic_parameters_LS(normRadianceHyperCubeMasked, radiantIntenHyperCubeMasked);
+
+fprintf('Done\n');
+
+%% Save hypercube and images
+
+hyperDir = [sourDir, filesep, 'Hypercubes'];
+
+hyperCube = S_krebs;
+save([hyperDir, filesep, 'estimated_reflectance_krebs.mat'], 'hyperCube');
+
+hyperCube = S_krebsShape;
+save([hyperDir, filesep, 'estimated_reflectance_krebs_with_shape.mat'], 'hyperCube');
+
+hyperCube = S_robles;
+save([hyperDir, filesep, 'estimated_reflectance_robles.mat'], 'hyperCube');
+
+%%
 
 cab('figSim');
 
 
-figure;imagesc(k_krebs); title('k Krebs');
-figure;imagesc(g_Krebs); title('g Krebs');
+figure;imagesc(k_krebs); title('k Krebs'); colorbar;
+figure;imagesc(g_Krebs); title('g Krebs'); colorbar;
 
-figure;imagesc(imageLdotN); title('n dot l');
-
-
-figure;imagesc(k_new); title('k ours');
-figure;imagesc(g_new); title('g ours');
-
-hyperspectralViewer(S_krebs.*15);
-hyperspectralViewer(S_new./alphaBalFactor);
+figure;imagesc(lDotnImg); title('n dot l');
 
 
-%% Estimate reflectance using minimisation with no added information
+figure;imagesc(k_krebsShape); title('k Krebs with Shape'); colorbar;
+figure;imagesc(g_krebsShape); title('g Krebs with Shape'); colorbar;
 
-% cab('figSim');
 
-% radiIntBandAver = estimate_lightsource(normRadianceHyperCube)';
+figure;imagesc(k_robles); title('k Robles'); colorbar;
+figure;imagesc(g_robles); title('g Robles'); colorbar;
+% hyperspectralViewer(S_krebs.*15);
+% hyperspectralViewer(S_new./alphaBalFactor);
+
+
+% %% Estimate reflectance using minimisation with no added information
 % 
+% % cab('figSim');
 % 
-% [kAverRadi, GAverRadi, phoAverRadi] = recover_dichromatic_parameters_LS(normRadianceHyperCube, radiIntBandAver);
+% % radiIntBandAver = estimate_lightsource(normRadianceHyperCube)';
+% % 
+% % 
+% % [kAverRadi, GAverRadi, phoAverRadi] = recover_dichromatic_parameters_LS(normRadianceHyperCube, radiIntBandAver);
+% % 
+% % hyperspectralViewer(phoAverRadi);
 % 
-% hyperspectralViewer(phoAverRadi);
-
-[kFullRadi, GFullRadi, phoFullRadi] = recover_dichromatic_parameters_LS(normRadianceHyperCube, radiantIntenHyperCube);
-
-GFullRadi(isnan(GFullRadi)) = 0;
-
-hyperspectralViewer(phoFullRadi);
-
-
-hyperCubeFig = figure('Name', 'Hypercube visualisation');
-
-hsVis = Hypercube_Visualiser(hyperCubeFig);
-hsVis.AddHypercube(phoAverRadi, "Reflectance Constant band radiant");
-hsVis.AddHypercube(phoFullRadi, "Reflectance Full Radiant");
-
-%%
-cab('figSim', 'hyperCubeFig');
-
-figKG = figure('Name', 'Shading factor and specular images');
-
-subplot(2,2,1);
-imshow(mat2gray(GAverRadi));
-title('Constant band radiant')
-
-subplot(2,2,2);
-imshow(mat2gray(kAverRadi));
-
-subplot(2,2,3);
-imshow(mat2gray(GFullRadi));
-title('Full radiant')
-
-subplot(2,2,4);
-imshow(mat2gray(kFullRadi));
-
-%%
-
-
-%% Calculate Shading factor of pixel 3D locations
-
-cab('figSim');
-
-surfNormal = pixRadianceData(:, 5:7);
-
-ptFrame = pixRadianceData(:, 2:4);
-
-%direction light vector
-ptLigVec = locLigSrc' - ptFrame;
-dirLigVec = ptLigVec./vecnorm(ptLigVec, 2, 2);
-
-%transform pts to light source coordinate frame
-PtFrameHom = [ptFrame'; ones(1,size(ptFrame,1))];
-ptsLightSrc = T_F_2_S*PtFrameHom;
-
-%distance from light source to points
-ptsDistLigSrc = cart2sphZ(ptsLightSrc(1,:), ptsLightSrc(2,:), ptsLightSrc(3,:))';
-    
-%distance from line-scan camera to points
-locLS = T_LS_2_F(1:3,4);
-ptViewVec = locLS' - ptFrame;
-ptsDistLS = vecnorm(ptViewVec,2,2);
-
-%direction camera viewing vector
-dirViewVec = ptViewVec./ptsDistLS; 
-    
-%length of sector for each pixel projected onto the distance for each
-%point. Assuming a square pixel, calculate the foreshortened area and
-%then find the projected area onto the surface for each pixel.
-sidePixLS = ptsDistLS.*fovLSPix;
-pixProjArea = sidePixLS.^2 ./ dot(dirViewVec, surfNormal, 2);
-pixProjArea(pixProjArea < 0) = 0;
-
-%shading factor of all pixels
-gVec = ShadingFactorPixels(surfNormal, dirLigVec, ptsDistLigSrc, pixProjArea);
-
-% %minimum shading factor (these pixels won't provide enough constraints)
-% Gmin = 0.01;
+% [k_Robles, GFullRadi, phoFullRadi] = recover_dichromatic_parameters_LS(normRadianceHyperCube, radiantIntenHyperCube);
 % 
-% %mask to remove any pixels with low G
-% Gmask = gVec > Gmin;
-
-%shading factor image
-imageG = zeros(rowsLS, numImages);
-
-%iterator
-pData = 1;
-
-for imgLoop = 1:numImages
-    numCurLine = numPixPerLine(imgLoop);
-    
-    %skip if no pixels
-    if numCurLine < 1
-        continue;
-    end
-    
-    pixLine = pixRadianceData(pData:pData + numCurLine - 1, 1);   
-    pixG = gVec(pData:pData + numCurLine - 1);
-    imageG(pixLine, imgLoop) = pixG;
-    
-    pData = pData + numCurLine;
-end
-
-figure;imagesc(imageG);
-
-binMaskG = imageG > 0;
-rpG = regionprops(binMaskG, 'Centroid', 'BoundingBox');
-
-figure;imshow(binMaskG); hold on;
-
-BB = floor(rpG(1).BoundingBox);
-rectangle('Position', [BB(1),BB(2),BB(3),BB(4)],'EdgeColor','r','LineWidth',2) ;
-
-rpG_crop = imcrop(binMaskG, BB);
-figure;imshow(rpG_crop);
-
-patchSize = [5, 5];
-
-
-rpG_tileCell = mat2tiles(rpG_crop, patchSize);
-[tRows, tCols] = size(rpG_tileCell);
-
-
-%apply mask to radiant intensity hypercube
-radiantIntenCubeMasked = radiantIntenHyperCube.*binMaskG;
-radiantIntenCubeMasked_crop = imcrop3(radiantIntenCubeMasked, [BB(1:2), 1, BB(3:4), numBands - 1]);
-radiantIntenCubeMasked_crop_tileCells = mat2tiles(radiantIntenCubeMasked_crop, [patchSize, Inf]);
-
-normRadianceCubeMasked = normRadianceHyperCube.*binMaskG;
-normRadianceCubeMasked_crop = imcrop3(normRadianceHyperCube, [BB(1:2), 1, BB(3:4), numBands - 1]);
-normRadianceCubeMasked_crop_tileCells = mat2tiles(normRadianceCubeMasked_crop, [patchSize, Inf]);
-
-imgG_crop = imcrop(imageG, BB);
-imgG_crop_tileCells = mat2tiles(imgG_crop, patchSize);
-
-rhoImg_crop_tileCells = cell(tRows, tCols);
-
-for i = 1:tRows
-   for j = 1:tCols
-       curMask = rpG_tileCell{i,j};
-       numValidPix = sum(curMask, 'all');
-       
-       if numValidPix < 2
-           rhoPatch = zeros(size(curMask));
-           rhoImg_crop_tileCells(i,j) = {rhoPatch};
-           continue
-       end
-       
-       SolveEstimatedReflectancePatch(curMask)
-   end
-end
-
-
-    estRefl = SolveEstimatedReflectance(normRadiance', radiantIntLine, surfNormal, ...
-        dirLigVec, dirViewVec, ptsDistLigSrc', pixProjArea, pixLine, 5, optOptions, maxPixDist);
-    
-    reflecHyperCube(pixLine, imgLoop, :) = estRefl';
-    
-    
-    pData = pData + numCurLine;
-
-
-
-normRadCube = zeros(rowsLS, numImages);
-lightFieldVarCube = zeros(rowsLS, numImages);
-
-reflecHyperCube = zeros(rowsLS, numImages, numBands);
-
-
-% optOptions = optimoptions(@lsqlin, 'Algorithm','trust-region-reflective', 'Display', 'none');
-optOptions = optimoptions(@lsqlin, 'Algorithm','interior-point', 'Display', 'none');
-
-% figRes = figure('Name', 'Estimated reflectance result');
-
-maxPixDist = 2;
-
-for imgLoop = 1:numImages
-    
-    numCurLine = numPixPerLine(imgLoop);
-
-    %Need atleast two point measurements from hyperspectral line
-    if numCurLine < 2
-        continue;
-    end
-    
-    pixLine = pixRadianceData(pData:pData + numCurLine - 1, 1);
-    
-    %need atleast one pair of consective pixels that are within maxPixDist
-    %apart
-    pixDiffAbs = abs(diff(pixLine));
-    if ~any(pixDiffAbs <= maxPixDist, 'all')
-       continue; 
-    end
-    
-%     tic();
-    
-    radiantIntLine = radiantIntenCell{imgLoop};
-    ptFrame = pixRadianceData(pData:pData + numCurLine - 1, 2:4);
-    PtFrameHom = [ptFrame'; ones(1,numCurLine)];
-    
-    %transform pts to light source coordinate frame
-    ptsLightSrc = T_F_2_S*PtFrameHom;
-    
-    %distance from light source to points
-    ptsDistLigSrc = cart2sphZ(ptsLightSrc(1,:), ptsLightSrc(2,:), ptsLightSrc(3,:));
-    
-    %direction light vector
-    ptLigVec = locLigSrc' - ptFrame;
-    dirLigVec = ptLigVec./vecnorm(ptLigVec, 2, 2); 
-    
-    
-
-    
-
-    
-    surfNormal = pixRadianceData(pData:pData + numCurLine - 1, 5:7);
-    normRadiance = pixRadianceData(pData:pData + numCurLine - 1, 8:end);
-    
-    
-    %length of sector for each pixel projected onto the distance for each
-    %point. Assuming a square pixel, calculate the foreshortened area and
-    %then find the projected area onto the surface for each pixel.
-    sidePixLS = ptsDistLS.*fovLSPix;
-    pixProjArea = sidePixLS.^2 ./ dot(dirViewVec, surfNormal, 2);
-
-    estRefl = SolveEstimatedReflectance(normRadiance', radiantIntLine, surfNormal, ...
-        dirLigVec, dirViewVec, ptsDistLigSrc', pixProjArea, pixLine, 5, optOptions, maxPixDist);
-    
-    reflecHyperCube(pixLine, imgLoop, :) = estRefl';
-    
-    
-    pData = pData + numCurLine;
-    
-%     tElapsed = toc();
-    
-%     fprintf("Elapsed time: %f \t number of pixels: %i\n",  tElapsed, numCurLine);
-end
-
-
-
-
-
-%% Plotting hypercubes
-
-% cab('hyperCubeFig', 'figSim');
+% GFullRadi(isnan(GFullRadi)) = 0;
+% 
+% hyperspectralViewer(phoFullRadi);
+% 
 % 
 % hyperCubeFig = figure('Name', 'Hypercube visualisation');
 % 
 % hsVis = Hypercube_Visualiser(hyperCubeFig);
-% hsVis.AddHypercube(radiantIntenHyperCube, "Radiant intensity from GP");
-% hsVis.AddHypercube(normRadianceHyperCube, "Normalised Radiance");
+% hsVis.AddHypercube(phoAverRadi, "Reflectance Constant band radiant");
+% hsVis.AddHypercube(phoFullRadi, "Reflectance Full Radiant");
+% 
+% %%
+% cab('figSim', 'hyperCubeFig');
+% 
+% figKG = figure('Name', 'Shading factor and specular images');
+% 
+% subplot(2,2,1);
+% imshow(mat2gray(GAverRadi));
+% title('Constant band radiant')
+% 
+% subplot(2,2,2);
+% imshow(mat2gray(kAverRadi));
+% 
+% subplot(2,2,3);
+% imshow(mat2gray(GFullRadi));
+% title('Full radiant')
+% 
+% subplot(2,2,4);
+% imshow(mat2gray(k_Robles));
+% 
+% %%
 % 
 % 
-% %% Estimate reflectance using minimisation with no added information
+% %% Calculate Shading factor of pixel 3D locations
+% 
+% cab('figSim');
+% 
+% surfNormal = pixRadianceData(:, 5:7);
+% 
+% ptFrame = pixRadianceData(:, 2:4);
+% 
+% %direction light vector
+% ptLigVec = locLigSrc' - ptFrame;
+% dirLigVec = ptLigVec./vecnorm(ptLigVec, 2, 2);
+% 
+% %transform pts to light source coordinate frame
+% PtFrameHom = [ptFrame'; ones(1,size(ptFrame,1))];
+% ptsLightSrc = T_F_2_S*PtFrameHom;
+% 
+% %distance from light source to points
+% ptsDistLigSrc = cart2sphZ(ptsLightSrc(1,:), ptsLightSrc(2,:), ptsLightSrc(3,:))';
+%     
+% %distance from line-scan camera to points
+% locLS = T_LS_2_F(1:3,4);
+% ptViewVec = locLS' - ptFrame;
+% ptsDistLS = vecnorm(ptViewVec,2,2);
+% 
+% %direction camera viewing vector
+% dirViewVec = ptViewVec./ptsDistLS; 
+%     
+% %length of sector for each pixel projected onto the distance for each
+% %point. Assuming a square pixel, calculate the foreshortened area and
+% %then find the projected area onto the surface for each pixel.
+% sidePixLS = ptsDistLS.*fovLSPix;
+% pixProjArea = sidePixLS.^2 ./ dot(dirViewVec, surfNormal, 2);
+% pixProjArea(pixProjArea < 0) = 0;
+% 
+% %shading factor of all pixels
+% gVec = ShadingFactorPixels(surfNormal, dirLigVec, ptsDistLigSrc, pixProjArea);
+% 
+% % %minimum shading factor (these pixels won't provide enough constraints)
+% % Gmin = 0.01;
 % % 
-% % [specularImgOR, shadingFactorImgOR, reflectanceOR] = recover_dichromatic_parameters_LS(normRadianceHyperCube, radiIntBandAver);
+% % %mask to remove any pixels with low G
+% % Gmask = gVec > Gmin;
+% 
+% %shading factor image
+% imageG = zeros(rowsLS, numImages);
+% 
+% %iterator
+% pData = 1;
+% 
+% for imgLoop = 1:numImages
+%     numCurLine = numPixPerLine(imgLoop);
+%     
+%     %skip if no pixels
+%     if numCurLine < 1
+%         continue;
+%     end
+%     
+%     pixLine = pixRadianceData(pData:pData + numCurLine - 1, 1);   
+%     pixG = gVec(pData:pData + numCurLine - 1);
+%     imageG(pixLine, imgLoop) = pixG;
+%     
+%     pData = pData + numCurLine;
+% end
+% 
+% figure;imagesc(imageG);
+% 
+% binMaskG = imageG > 0;
+% rpG = regionprops(binMaskG, 'Centroid', 'BoundingBox');
+% 
+% figure;imshow(binMaskG); hold on;
+% 
+% BB = floor(rpG(1).BoundingBox);
+% rectangle('Position', [BB(1),BB(2),BB(3),BB(4)],'EdgeColor','r','LineWidth',2) ;
+% 
+% rpG_crop = imcrop(binMaskG, BB);
+% figure;imshow(rpG_crop);
+% 
+% patchSize = [5, 5];
+% 
+% 
+% rpG_tileCell = mat2tiles(rpG_crop, patchSize);
+% [tRows, tCols] = size(rpG_tileCell);
+% 
+% 
+% %apply mask to radiant intensity hypercube
+% radiantIntenCubeMasked = radiantIntenHyperCube.*binMaskG;
+% radiantIntenCubeMasked_crop = imcrop3(radiantIntenCubeMasked, [BB(1:2), 1, BB(3:4), numBands - 1]);
+% radiantIntenCubeMasked_crop_tileCells = mat2tiles(radiantIntenCubeMasked_crop, [patchSize, Inf]);
+% 
+% normRadianceCubeMasked = normRadianceHyperCube.*binMaskG;
+% normRadianceCubeMasked_crop = imcrop3(normRadianceHyperCube, [BB(1:2), 1, BB(3:4), numBands - 1]);
+% normRadianceCubeMasked_crop_tileCells = mat2tiles(normRadianceCubeMasked_crop, [patchSize, Inf]);
+% 
+% imgG_crop = imcrop(imageG, BB);
+% imgG_crop_tileCells = mat2tiles(imgG_crop, patchSize);
+% 
+% rhoImg_crop_tileCells = cell(tRows, tCols);
+% 
+% for i = 1:tRows
+%    for j = 1:tCols
+%        curMask = rpG_tileCell{i,j};
+%        numValidPix = sum(curMask, 'all');
+%        
+%        if numValidPix < 2
+%            rhoPatch = zeros(size(curMask));
+%            rhoImg_crop_tileCells(i,j) = {rhoPatch};
+%            continue
+%        end
+%        
+%        SolveEstimatedReflectancePatch(curMask)
+%    end
+% end
+% 
+% 
+%     estRefl = SolveEstimatedReflectance(normRadiance', radiantIntLine, surfNormal, ...
+%         dirLigVec, dirViewVec, ptsDistLigSrc', pixProjArea, pixLine, 5, optOptions, maxPixDist);
+%     
+%     reflecHyperCube(pixLine, imgLoop, :) = estRefl';
+%     
+%     
+%     pData = pData + numCurLine;
+% 
+% 
+% 
+% normRadCube = zeros(rowsLS, numImages);
+% lightFieldVarCube = zeros(rowsLS, numImages);
+% 
+% reflecHyperCube = zeros(rowsLS, numImages, numBands);
+% 
+% 
+% % optOptions = optimoptions(@lsqlin, 'Algorithm','trust-region-reflective', 'Display', 'none');
+% optOptions = optimoptions(@lsqlin, 'Algorithm','interior-point', 'Display', 'none');
+% 
+% % figRes = figure('Name', 'Estimated reflectance result');
+% 
+% maxPixDist = 2;
+% 
+% for imgLoop = 1:numImages
+%     
+%     numCurLine = numPixPerLine(imgLoop);
+% 
+%     %Need atleast two point measurements from hyperspectral line
+%     if numCurLine < 2
+%         continue;
+%     end
+%     
+%     pixLine = pixRadianceData(pData:pData + numCurLine - 1, 1);
+%     
+%     %need atleast one pair of consective pixels that are within maxPixDist
+%     %apart
+%     pixDiffAbs = abs(diff(pixLine));
+%     if ~any(pixDiffAbs <= maxPixDist, 'all')
+%        continue; 
+%     end
+%     
+% %     tic();
+%     
+%     radiantIntLine = radiantIntenCell{imgLoop};
+%     ptFrame = pixRadianceData(pData:pData + numCurLine - 1, 2:4);
+%     PtFrameHom = [ptFrame'; ones(1,numCurLine)];
+%     
+%     %transform pts to light source coordinate frame
+%     ptsLightSrc = T_F_2_S*PtFrameHom;
+%     
+%     %distance from light source to points
+%     ptsDistLigSrc = cart2sphZ(ptsLightSrc(1,:), ptsLightSrc(2,:), ptsLightSrc(3,:));
+%     
+%     %direction light vector
+%     ptLigVec = locLigSrc' - ptFrame;
+%     dirLigVec = ptLigVec./vecnorm(ptLigVec, 2, 2); 
+%     
+%     
+% 
+%     
+% 
+%     
+%     surfNormal = pixRadianceData(pData:pData + numCurLine - 1, 5:7);
+%     normRadiance = pixRadianceData(pData:pData + numCurLine - 1, 8:end);
+%     
+%     
+%     %length of sector for each pixel projected onto the distance for each
+%     %point. Assuming a square pixel, calculate the foreshortened area and
+%     %then find the projected area onto the surface for each pixel.
+%     sidePixLS = ptsDistLS.*fovLSPix;
+%     pixProjArea = sidePixLS.^2 ./ dot(dirViewVec, surfNormal, 2);
+% 
+%     estRefl = SolveEstimatedReflectance(normRadiance', radiantIntLine, surfNormal, ...
+%         dirLigVec, dirViewVec, ptsDistLigSrc', pixProjArea, pixLine, 5, optOptions, maxPixDist);
+%     
+%     reflecHyperCube(pixLine, imgLoop, :) = estRefl';
+%     
+%     
+%     pData = pData + numCurLine;
+%     
+% %     tElapsed = toc();
+%     
+% %     fprintf("Elapsed time: %f \t number of pixels: %i\n",  tElapsed, numCurLine);
+% end
+% 
+% 
+% 
+% 
+% 
+% %% Plotting hypercubes
+% 
+% % cab('hyperCubeFig', 'figSim');
 % % 
-% % hyperspectralViewer(reflectanceOR);
+% % hyperCubeFig = figure('Name', 'Hypercube visualisation');
+% % 
+% % hsVis = Hypercube_Visualiser(hyperCubeFig);
+% % hsVis.AddHypercube(radiantIntenHyperCube, "Radiant intensity from GP");
+% % hsVis.AddHypercube(normRadianceHyperCube, "Normalised Radiance");
+% % 
+% % 
+% % %% Estimate reflectance using minimisation with no added information
+% % % 
+% % % [specularImgOR, shadingFactorImgOR, reflectanceOR] = recover_dichromatic_parameters_LS(normRadianceHyperCube, radiIntBandAver);
+% % % 
+% % % hyperspectralViewer(reflectanceOR);
+% % 
+% % [specularImgOR, shadingFactorImgOR, reflectanceNEW] = recover_dichromatic_parameters_LS(normRadianceHyperCube, radiantIntenHyperCube, 5, 0.00);
+% % 
+% % hyperspectralViewer(reflectanceNEW);
 % 
-% [specularImgOR, shadingFactorImgOR, reflectanceNEW] = recover_dichromatic_parameters_LS(normRadianceHyperCube, radiantIntenHyperCube, 5, 0.00);
 % 
-% hyperspectralViewer(reflectanceNEW);
-
-
-% hsVis.AddHypercube(reflectanceOR, "Reflectance Original Method")
-% clc;
-% lineT = 212;
-% pixT = 39;
-% bandT = 100;
+% % hsVis.AddHypercube(reflectanceOR, "Reflectance Original Method")
+% % clc;
+% % lineT = 212;
+% % pixT = 39;
+% % bandT = 100;
+% % 
+% % l = radiantIntenHyperCube(pixT, lineT, bandT);
+% % G(pixT, lineT)*l*S(pixT, lineT, bandT) + K(pixT, lineT)*l
+% % normRadianceHyperCube(pixT, lineT, bandT)
 % 
-% l = radiantIntenHyperCube(pixT, lineT, bandT);
-% G(pixT, lineT)*l*S(pixT, lineT, bandT) + K(pixT, lineT)*l
-% normRadianceHyperCube(pixT, lineT, bandT)
-
-%% 
-
-
-%% Calculate estimated reflectance for each line measurement
-
-pData = 1;
-
-
-%radiant intensity magnitude produced by light source for each line image. There is a
-%value at each pixel-band
-
-
-normRadCube = zeros(rowsLS, numImages);
-lightFieldVarCube = zeros(rowsLS, numImages);
-
-reflecHyperCube = zeros(rowsLS, numImages, numBands);
-
-locLS = T_LS_2_F(1:3,4);
-
-% optOptions = optimoptions(@lsqlin, 'Algorithm','trust-region-reflective', 'Display', 'none');
-optOptions = optimoptions(@lsqlin, 'Algorithm','interior-point', 'Display', 'none');
-
-% figRes = figure('Name', 'Estimated reflectance result');
-
-maxPixDist = 2;
-
-for imgLoop = 1:numImages
-    
-    numCurLine = numPixPerLine(imgLoop);
-
-    %Need atleast two point measurements from hyperspectral line
-    if numCurLine < 2
-        continue;
-    end
-    
-    pixLine = pixRadianceData(pData:pData + numCurLine - 1, 1);
-    
-    %need atleast one pair of consective pixels that are within maxPixDist
-    %apart
-    pixDiffAbs = abs(diff(pixLine));
-    if ~any(pixDiffAbs <= maxPixDist, 'all')
-       continue; 
-    end
-    
-%     tic();
-    
-    radiantIntLine = radiantIntenCell{imgLoop};
-    ptFrame = pixRadianceData(pData:pData + numCurLine - 1, 2:4);
-    PtFrameHom = [ptFrame'; ones(1,numCurLine)];
-    
-    %transform pts to light source coordinate frame
-    ptsLightSrc = T_F_2_S*PtFrameHom;
-    
-    %distance from light source to points
-    ptsDistLigSrc = cart2sphZ(ptsLightSrc(1,:), ptsLightSrc(2,:), ptsLightSrc(3,:));
-    
-    %direction light vector
-    ptLigVec = locLigSrc' - ptFrame;
-    dirLigVec = ptLigVec./vecnorm(ptLigVec, 2, 2); 
-    
-    
-    ptViewVec = locLS' - ptFrame;
-    dirViewVec = ptViewVec./vecnorm(ptViewVec, 2, 2); %direction camera viewing vector
-    ptsDistLS = vecnorm(ptViewVec,2,2); %distance from line-scan camera to points
-    
-
-    
-    surfNormal = pixRadianceData(pData:pData + numCurLine - 1, 5:7);
-    normRadiance = pixRadianceData(pData:pData + numCurLine - 1, 8:end);
-    
-    
-    %length of sector for each pixel projected onto the distance for each
-    %point. Assuming a square pixel, calculate the foreshortened area and
-    %then find the projected area onto the surface for each pixel.
-    sidePixLS = ptsDistLS.*fovLSPix;
-    pixProjArea = sidePixLS.^2 ./ dot(dirViewVec, surfNormal, 2);
-
-    estRefl = SolveEstimatedReflectance(normRadiance', radiantIntLine, surfNormal, ...
-        dirLigVec, dirViewVec, ptsDistLigSrc', pixProjArea, pixLine, 5, optOptions, maxPixDist);
-    
-    reflecHyperCube(pixLine, imgLoop, :) = estRefl';
-    
-    
-    pData = pData + numCurLine;
-    
-%     tElapsed = toc();
-    
-%     fprintf("Elapsed time: %f \t number of pixels: %i\n",  tElapsed, numCurLine);
-end
- 
-% normRadCube = mat2gray(normRadCube);
-
-img = reflecHyperCube(:,:,100);
-
-imshow(img);
-
-
-lightImg = mat2gray(radiantIntLine);
-lightVarImg = mat2gray(lightFieldVarCube);
-
-figure()
-subplot(1,3, 1);
-imshow(lightImg);
-title('normalised light intensity');
-
-subplot(1,3, 2);
-imshow(lightVarImg);
-colormap(gca, jet(256)); % Ignore pink map and use jet instead.
-colorbar(gca);
-title('normalised variance');
-
-
-subplot(1,3, 3);
-imshow(normRadCube);
+% %% 
+% 
+% 
+% %% Calculate estimated reflectance for each line measurement
+% 
+% pData = 1;
+% 
+% 
+% %radiant intensity magnitude produced by light source for each line image. There is a
+% %value at each pixel-band
+% 
+% 
+% normRadCube = zeros(rowsLS, numImages);
+% lightFieldVarCube = zeros(rowsLS, numImages);
+% 
+% reflecHyperCube = zeros(rowsLS, numImages, numBands);
+% 
+% locLS = T_LS_2_F(1:3,4);
+% 
+% % optOptions = optimoptions(@lsqlin, 'Algorithm','trust-region-reflective', 'Display', 'none');
+% optOptions = optimoptions(@lsqlin, 'Algorithm','interior-point', 'Display', 'none');
+% 
+% % figRes = figure('Name', 'Estimated reflectance result');
+% 
+% maxPixDist = 2;
+% 
+% for imgLoop = 1:numImages
+%     
+%     numCurLine = numPixPerLine(imgLoop);
+% 
+%     %Need atleast two point measurements from hyperspectral line
+%     if numCurLine < 2
+%         continue;
+%     end
+%     
+%     pixLine = pixRadianceData(pData:pData + numCurLine - 1, 1);
+%     
+%     %need atleast one pair of consective pixels that are within maxPixDist
+%     %apart
+%     pixDiffAbs = abs(diff(pixLine));
+%     if ~any(pixDiffAbs <= maxPixDist, 'all')
+%        continue; 
+%     end
+%     
+% %     tic();
+%     
+%     radiantIntLine = radiantIntenCell{imgLoop};
+%     ptFrame = pixRadianceData(pData:pData + numCurLine - 1, 2:4);
+%     PtFrameHom = [ptFrame'; ones(1,numCurLine)];
+%     
+%     %transform pts to light source coordinate frame
+%     ptsLightSrc = T_F_2_S*PtFrameHom;
+%     
+%     %distance from light source to points
+%     ptsDistLigSrc = cart2sphZ(ptsLightSrc(1,:), ptsLightSrc(2,:), ptsLightSrc(3,:));
+%     
+%     %direction light vector
+%     ptLigVec = locLigSrc' - ptFrame;
+%     dirLigVec = ptLigVec./vecnorm(ptLigVec, 2, 2); 
+%     
+%     
+%     ptViewVec = locLS' - ptFrame;
+%     dirViewVec = ptViewVec./vecnorm(ptViewVec, 2, 2); %direction camera viewing vector
+%     ptsDistLS = vecnorm(ptViewVec,2,2); %distance from line-scan camera to points
+%     
+% 
+%     
+%     surfNormal = pixRadianceData(pData:pData + numCurLine - 1, 5:7);
+%     normRadiance = pixRadianceData(pData:pData + numCurLine - 1, 8:end);
+%     
+%     
+%     %length of sector for each pixel projected onto the distance for each
+%     %point. Assuming a square pixel, calculate the foreshortened area and
+%     %then find the projected area onto the surface for each pixel.
+%     sidePixLS = ptsDistLS.*fovLSPix;
+%     pixProjArea = sidePixLS.^2 ./ dot(dirViewVec, surfNormal, 2);
+% 
+%     estRefl = SolveEstimatedReflectance(normRadiance', radiantIntLine, surfNormal, ...
+%         dirLigVec, dirViewVec, ptsDistLigSrc', pixProjArea, pixLine, 5, optOptions, maxPixDist);
+%     
+%     reflecHyperCube(pixLine, imgLoop, :) = estRefl';
+%     
+%     
+%     pData = pData + numCurLine;
+%     
+% %     tElapsed = toc();
+%     
+% %     fprintf("Elapsed time: %f \t number of pixels: %i\n",  tElapsed, numCurLine);
+% end
+%  
+% % normRadCube = mat2gray(normRadCube);
+% 
+% img = reflecHyperCube(:,:,100);
+% 
+% imshow(img);
+% 
+% 
+% lightImg = mat2gray(radiantIntLine);
+% lightVarImg = mat2gray(lightFieldVarCube);
+% 
+% figure()
+% subplot(1,3, 1);
+% imshow(lightImg);
+% title('normalised light intensity');
+% 
+% subplot(1,3, 2);
+% imshow(lightVarImg);
 % colormap(gca, jet(256)); % Ignore pink map and use jet instead.
 % colorbar(gca);
-title('normalised radiance');
-
-
+% title('normalised variance');
+% 
+% 
+% subplot(1,3, 3);
+% imshow(normRadCube);
+% % colormap(gca, jet(256)); % Ignore pink map and use jet instead.
+% % colorbar(gca);
+% title('normalised radiance');
+% 
+% 
