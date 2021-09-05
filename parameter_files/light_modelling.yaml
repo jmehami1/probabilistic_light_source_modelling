@@ -10,9 +10,11 @@ NumberExpectedMarker: 35
 
 
 # Parameters for the code
-DisplayOn: true
-UsingCircularTarget: false
+DisplayOn: false
 UsingBlackFly: true
 UseTestData: true
 IMG_ON_PLATFORM: 3
-sigmaRadianceNoise: 0.1
+sigmaRadianceNoisePercent: 0.05
+HasOpenCV: false
+RunLS: true
+DownSamplingGP: 50
