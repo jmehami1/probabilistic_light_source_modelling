@@ -34,12 +34,18 @@ polarplot(thetaRID,radiantIntenRID, 'rx'); hold on;
 ax = gca;
 ax.ThetaLim = [-90,90];
 ax.ThetaZeroLocation = 'top';
+hold on;
+ax.RAxis.Label.String = 'Normalised Radiant Intensity';
+% ax.ThetaAxis.Label.String = 'Angle (Deg)';
+title('Real RID with Fitted Spline');
 
 RIDSplineFit = csapi(thetaRID,radiantIntenRID);
 thetas = linspace(-pi/2, pi/2, 1000);
 
 radiantIntSpline = fnval(RIDSplineFit, thetas);
 polarplot(thetas,radiantIntSpline, '-b');
+
+legend('Data Points', 'Fitted Spline', 'Location', 'southwest');
 
 %% Setting up non-isotropic light source
 

@@ -20,6 +20,10 @@ addpath(genpath('parameter_files'));
 %source code for this project
 addpath('src_code');
 
+%MEX functions for ArUco pose estimation
+addpath(genpath(['ext_lib', filesep, 'mex_aruco']));
+
+
 %parameter file
 paramFile = ['parameter_files', filesep, 'light_triangulation.yaml'];
 if ~exist(paramFile, 'file')

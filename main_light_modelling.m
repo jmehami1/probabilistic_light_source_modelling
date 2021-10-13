@@ -25,6 +25,9 @@ run(['ext_lib', filesep, 'gpml-matlab-master', filesep, 'startup.m']);
 %Better pose estimation of a planar board
 addpath(genpath(['ext_lib', filesep, 'IPPE']));
 
+%MEX functions for ArUco pose estimation
+addpath(genpath(['ext_lib', filesep, 'mex_aruco']));
+
 %code for this project
 addpath('src_code');
 
@@ -41,7 +44,7 @@ end
 
 paramYaml = yaml.ReadYaml(paramFile);
 displayOn = paramYaml.DisplayOn;
-usingBlackfly = paramYaml.UsingBlackFly;
+frameCamera = lower(paramYaml.FrameCamera);
 usingTestData = paramYaml.UseTestData;
 hasOpenCV = paramYaml.HasOpenCV;
 runLS = paramYaml.RunLS;
@@ -56,16 +59,18 @@ maxIntUint14 = 2^14 - 1;
 
 %STD in the radiance measurements
 stdRadianceNoisePer = paramYaml.sigmaRadianceNoisePercent;
-stdRadianceNoise = (stdRadianceNoisePer/100);
+cur_stdRadianceNoise = (stdRadianceNoisePer/100);
 
 %% Directories and files
 
 %frame camera intrinsic parameters file
-if usingBlackfly
-    frameIntrFile = ['frame_camera_intrinsic', filesep, 'blackfly.mat'];
-else
-    frameIntrFile = ['frame_camera_intrinsic', filesep, 'primesense.mat'];
-end
+frameIntrFile = ['frame_camera_intrinsic', filesep, frameCamera, '.mat'];
+
+% if frameCamera
+%     frameIntrFile = ['frame_camera_intrinsic', filesep, 'blackfly.mat'];
+% else
+%     frameIntrFile = ['frame_camera_intrinsic', filesep, 'primesense.mat'];
+% end
 
 if ~exist(frameIntrFile, 'file')
     error("Frame camera intrinsic parameters not found");
@@ -598,7 +603,7 @@ if runLS
         
         targetL = ptsRadianceTarget(:, bandLoop);
         
-        [optPhi, res] = LightSrcOptmLS(lightSrc, Phi0, targetL', ptsOnTarget', ptsSurfNorm', targetReflectances(bandLoop), optOptions, stdRadianceNoise);
+        [optPhi, res] = LightSrcOptmLS(lightSrc, Phi0, targetL', ptsOnTarget', ptsSurfNorm', targetReflectances(bandLoop), optOptions, cur_stdRadianceNoise);
         resBand(bandLoop) = res;
         
         %store optimised parameters and residual
@@ -656,8 +661,8 @@ runTraining = true;
 if exist([resultDir, filesep, 'gp_lightsrc_optm.mat'], 'file')
     load([resultDir, filesep, 'gp_lightsrc_optm.mat']);
     
-    %if downsampling has not changed, GP training is not necessary.
-    if curDownSamplingGP == downSamplingGP
+    %if downsampling and STD radiance noise have not changed, GP training is not necessary.
+    if (curDownSamplingGP == downSamplingGP) && (stdRadianceNoise == cur_stdRadianceNoise)
         runTraining = false;
     end
 end
@@ -666,32 +671,35 @@ end
 if runTraining
     %cell arrays to store hyperparameters and training data for each band
     hypOptCell = cell(numBands, 1);
-    trainingXYCell = cell(numBands, 1);
+%     trainingXYCell = cell(numBands, 1);
     downSamplingGP = curDownSamplingGP; %set current downSamplingGP
+    stdRadianceNoise = cur_stdRadianceNoise; % set current radiance noise
     
     for bandLoop = 1:numBands
         trainingXY(:,3) = radIntVP_Meas(:, bandLoop);
         
         %Train GP model and query for test data
-        [mu, varMu, hypOpt, trainingXYDown] = LightSrcOptmGP(3, trainingXY, testingX, stdRadianceNoise, downSamplingGP, 100000, false);
+%         [mu, varMu, hypOpt, trainingXYDown] = LightSrcOptmGP(3, trainingXY, testingX, stdRadianceNoise, downSamplingGP, 100000, false);
+        [mu, varMu, curHypOptStruct] = LightSrcOptmGP(testingX, trainingXY, 3, stdRadianceNoise, downSamplingGP, 100000, false);
+
         
         radIntVP_GP(:,:,bandLoop) = reshape(mu,rows);
         varVP_GP(:,:,bandLoop) = reshape(varMu,rows);
         
-        hypOptCell(bandLoop) = {hypOpt};
-        trainingXYCell(bandLoop) = {trainingXYDown};
+        hypOptCell(bandLoop) = {curHypOptStruct};
+%         trainingXYCell(bandLoop) = {trainingXYDown};
         
         fprintf('Optimised band %i of %i\n', bandLoop, numBands);
     end
     
-    save([resultDir, filesep, 'gp_lightsrc_optm.mat'], 'hypOptCell', 'downSamplingGP', 'trainingXYCell');
+    save([resultDir, filesep, 'gp_lightsrc_optm.mat'], 'hypOptCell', 'downSamplingGP', 'stdRadianceNoise');
 else
     for bandLoop = 1:numBands
-        trainingXY = trainingXYCell{bandLoop};
-        hypOpt = hypOptCell{bandLoop};
+%         trainingXY = trainingXYCell{bandLoop};
+        curHypOptStruct = hypOptCell{bandLoop};
         
         %Query for test data only
-        [mu, varMu] = LightSrcOptmGP(3, trainingXY, testingX, stdRadianceNoise, hypOpt);
+        [mu, varMu] = LightSrcOptmGP(testingX, curHypOptStruct);
         
         radIntVP_GP(:,:,bandLoop) = reshape(mu,rows);
         varVP_GP(:,:,bandLoop) = reshape(varMu,rows);

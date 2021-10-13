@@ -1,7 +1,23 @@
 # light_source_modelling
-Probabilistic modelling of a near-field non-isotropic light source.
+A hyperspectral camera requires a powerful directed light source that will illuminate a surface of interest that is being captured. Understanding how the radiant intensity of this source is distributed across this surface can aid in trying to estimate material properties from the hyperspectral images. This work aims to build a probabilistic point model of a single **near-field non-isotropic** light source using a **Gaussian Process** with a **non-zero mean function**. Non-isotropic behaviour means that the light source has a **principal direction** where radiant intensity is the highest.
+
+The hyperspectral camera we have worked with captures in a line-scan manner, so therefore, we have incorporated an RGB frame camera to compensate for the missing dimension. The frame camera coordinate frame is **always** treated to be the world coordinate frame. This work assumes the camera system has been calibrated prior.
+
+There are three key components to this work:
+
+1. Realistic light simulator with a real RID curve to validate GP light source model (single band)
+
+2. Real data captured using camera system
+
+   ​	a. Captured frame images to triangulate the location and direction of light source in world coordinates
+
+   ​	b. Captured frame and hyperspectral images to build the GP model w.r.t to the light source.
+
+3. Estimate reflectance using different methods which incorporate the radiant intensity information from the GP light model
 
 
+
+## Light Source Simulator
 
 MATLAB Simulator 
 
