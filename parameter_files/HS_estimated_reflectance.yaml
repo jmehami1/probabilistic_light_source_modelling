@@ -8,10 +8,33 @@ NumRows: 8
 NumCols: 6
 NumberExpectedMarker: 35
 
+# *****Parameters for the code*****
 
-# Parameters for the code
+# Show figures during execution (set to false to speed-up)
 DisplayOn: false
-UsingBlackFly: true
+
+# Frame camera that is used for RGB images (either blackfly or primesense)
+FrameCamera: blackfly
+
+# Using the test data present in directory
 UseTestData: true
+
+# Test data directory. Options:
+#   - deli_meats_flat
+#   - deli_meats_curved
+TestDataDir: deli_meats_flat
+
+# The first number of images assumed to be on the platform (board has not been moved)
+IMG_ON_PLATFORM: 3
+
+# Gaussian STD noise of radiance measurements
 sigmaRadianceNoisePercent: 0.05
+
+# Does the current PC have openCV installed (this is necessary for ArUco board pose estimation)
 HasOpenCV: false
+
+
+# Flags to run different estimated reflectance methods
+RunRobles: true
+RunKrebs: true
+RunKrebsShape: true
