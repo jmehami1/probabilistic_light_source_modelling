@@ -8,4 +8,4 @@ The config file for the mitsuba simulator can be downloaded [here]() and the pro
 
 ### Supplementary material for the paper
 
-The supplementary material for the paper is available [here](https://drive.google.com/file/d/1lh65FZ-0yxKrdX1JBLPPREKcckFIlHB9/view?usp=sharing).
+The supplementary material for the paper is available [here](https://drive.google.com/file/d/1SxRDQslgx4DHqqKqA2xz2Qg-8DNb6T10/view?usp=sharing).
