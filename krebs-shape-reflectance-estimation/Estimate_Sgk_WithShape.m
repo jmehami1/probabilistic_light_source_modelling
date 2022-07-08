@@ -27,6 +27,7 @@ function [S, gImg, kImg] = Estimate_Sgk_WithShape(R, pixList, maskID, lDotnImg, 
 %STD over bands
 sigmaR = std(R,0,3);
 ln_sigmaR = log(sigmaR);
+ln_sigmaR(~isfinite(ln_sigmaR)) = 0;
 
 %mean over bands
 muR = mean(R, 3);
@@ -208,7 +209,7 @@ ind = sub2ind([nY, nX], pixList(:,1)', pixList(:,2)');
 muR_vec = muR(ind); %vector of R for all relevant pixels
 ln_lDotnVec = ln_lDotnImg(ind); %vector of light source and surface normal dot product for all relevant pixels
 R_NAN = R;
-R_NAN(R_NAN < 1e-7) = nan; %make any close to zero measurements nan
+R_NAN(R_NAN <=0) = nan; %make any close to zero measurements nan
 
 %minimum measurement for each pixels across the bands
 minR = min(R_NAN, [], 3, 'omitnan');
