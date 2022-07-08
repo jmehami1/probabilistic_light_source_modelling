@@ -42,11 +42,17 @@ elseif (nY_l == nY) && (nX_l == nX) && (nB_l == nB)
     % radiant intensity hypercube     
     R = I./l;
 else
-    error('input radiant intensity not of correct size');
+        tempRadi(1,:,:) = l';
+    R = bsxfun(@rdivide, I, tempRadi);
+    
+    
+%     error('input radiant intensity not of correct size');
 end
 
 %Turn NaN elements to zero
 R(isnan(R)) = 0;
+R(isinf(R)) = 0;
+
 
 %list of relevant pixels given by mask. Each of these pixels has an unknown
 %shading factor, reflectance, and specular coefficient
