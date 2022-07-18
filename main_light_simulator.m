@@ -1,5 +1,6 @@
 %Initial script for simulating a non-isotropic point light source.
 
+clc;
 close all;
 clear;
 
@@ -7,63 +8,93 @@ clear;
 addpath('ext_lib');
 
 %robotics toolbox
-run(['ext_lib', filesep, 'rvctools', filesep, 'startup_rvc.m']);
+run(fullfile('ext_lib', 'rvctools', 'startup_rvc.m'));
 
 %yaml reader package
-addpath(genpath(['ext_lib', filesep, 'yamlmatlab-master']));
+addpath(genpath(fullfile('ext_lib', 'yamlmatlab-master')));
 
 %GPML toolbox
-run(['ext_lib', filesep, 'gpml-matlab-master', filesep, 'startup.m']);
+run(fullfile('ext_lib', 'gpml-matlab-master', 'startup.m'));
+
+%Better export of figures to images
+addpath(fullfile('ext_lib', 'export_fig'))
 
 %code for this project
 addpath('src_code');
 
-%% Parameters to change
+%results directory
+resultsDir = "sim_results";
+if ~exist(resultsDir, 'dir')
+    mkdir(resultsDir);
+end
 
+%% default settings
 
+%Value of 6 replicates results in paper
+rng(6);
 
+%plot defaults
+defaultFontSize = 18;
+hwRatioDefault = 1;
+defaultFont = 'times';
 
 %% Real RID data and plot
+
 %load real rid data
-data = readmatrix('parameter_files/real_rid_data.csv');
-thetaRID = data(:,2);
-radiantIntenRID = data(:,1);
+ridData = readmatrix(fullfile('parameter_files', 'real_rid_data.csv'));
+thetaRID = ridData(:,2);
+radiantIntenRID = ridData(:,1);
 
-figRIDPolar = figure('Name', 'Real RID');
-polarplot(thetaRID,radiantIntenRID, 'rx'); hold on;
-ax = gca;
-ax.ThetaLim = [-90,90];
-ax.ThetaZeroLocation = 'top';
-hold on;
-ax.RAxis.Label.String = 'Normalised Radiant Intensity';
-% ax.ThetaAxis.Label.String = 'Angle (Deg)';
-title('Real RID with Fitted Spline');
+%plot RID data polar plot
+figRIDPolar = figure('Name', 'Real RID polar plot');
 
+%plot data
+polarplot(thetaRID,radiantIntenRID, 'rx', 'MarkerSize',10); hold on;
+
+%fit and plot spline to data
 RIDSplineFit = csapi(thetaRID,radiantIntenRID);
 thetas = linspace(-pi/2, pi/2, 1000);
-
 radiantIntSpline = fnval(RIDSplineFit, thetas);
-polarplot(thetas,radiantIntSpline, '-b');
+polarplot(thetas,radiantIntSpline, '-b', 'LineWidth',1.5);
 
-legend('Data Points', 'Fitted Spline', 'Location', 'southwest');
+%have to manually change axes settings for polar plots
+ax = gca;
+ax.RColor = [0,0,0];
+ax.ThetaColor = [0,0,0];
+ax.ThetaLim = [-90,90];
+ax.ThetaZeroLocation = 'top';
+ax.RAxis.Label.String = 'Normalised RID';
+ax.RAxis.Label.Interpreter = 'latex';
+ax.RAxis.Label.FontName = defaultFont;
+ax.RAxis.Label.FontSize = defaultFontSize;
+ax.RAxis.Label.Color = [0,0,0];
+ax.ThetaAxis.Label.String = 'Angle (\(^{\circ}\))';
+ax.ThetaAxis.Label.Position = [0,1.25,0];
+ax.ThetaAxis.Label.Interpreter = 'latex';
+ax.ThetaAxis.Label.FontSize = defaultFontSize;
+ax.ThetaAxis.Label.FontName = defaultFont;
+ax.ThetaAxis.Label.Color = [0,0,0];
+legend('Measurements', 'Fitted Spline', 'Location', 'southwest');
+
+imgName = fullfile(resultsDir, 'real_rid_polarplot.png');
+exportpropergraphic(figRIDPolar, imgName, 0.6);
 
 %% Setting up non-isotropic light source
 
 %Pose of source in world coordinates (frame camera)
 locLightSrc = [0.1;0.1;-0.1];
-rotLightSrc = eul2rotm(deg2rad([0,-10, 0]), 'ZYX');
+rotLightSrc = eul2rotm(deg2rad([0,-10, 10]), 'ZYX');
 
-% locLightSrc = [0.18; -0.05; 0.05];
-% rotLightSrc = [0.792897128208011,0.00375573235981344,-0.609343941098892;0.00375573235981344,0.999931891212147,0.0110502222303317;0.609343941098892,-0.0110502222303317,0.792829019420159];
 T_S_2_F = [rotLightSrc, locLightSrc; 0, 0, 0, 1];
 
 %radiant intensity distribution parameters
 maxRadiInt = 10;
+
+%directional component exponent (higher makes the light more laser like) 
 mu = 2;
 
 %attentuation
 r_d = 1; %effective radius of disk source
-
 
 %% Setting up light simulator figure
 
@@ -79,49 +110,26 @@ axis equal;
 
 %light source object
 lightSrc = LightSimulator(locLightSrc, rotLightSrc, maxRadiInt, r_d, mu, figSim, S, RIDSplineFit);
+lightSrc.PlotRID3D(1000);
 
 %% Setting up Line-scan camera
 
-%assuming no distortion and no uncertainty in parameters
-maxPixInt = 256;
-darkPixInt = 10;
-respCurveGrad = 10;
+figure(figSim);
 
+%assuming no distortion and no uncertainty in parameters
 %variance of pixel intensity noise in line-scan camera measurements
 intNoiseSigma = 0.01;
-% 
-% maxRadiLS = 1.5*maxRadiInt;
-% darkRadLS = 0.1;
 
 %line-scan intrinsic camera parameters
 fyLS  = 800;
 v0 = 160;
 yPix = 320;
-
 lsIntrinsic = cameraIntrinsics([1, fyLS], [realmin,v0],[yPix, 1]);
 
 rotLS = eul2rotm(deg2rad([90, 0, -10]), 'ZYX');
-% rotLS = rotLightSrc;
 tLS = [-0.1; 0.1; -0.1];
-% tLS = locLightSrc + [0; 0.1; 0];
-
-
-
-% tLS = [0.125101976645449;-0.0169881345205247;-0.110138876985863];
-% rotLS = [-0.970289293330054,-0.0609119653632981,-0.234154691869808;0.0563354557071021,-0.998068323042120,0.0261904366165156;-0.235297691614978,0.0122210889642028,0.971846511186408];
-
-%pose of line-scan w.r.t frame camera
-% rotLS = rotLightSrc;
-% tLS = [0.125101976645449;-0.0169881345205247;-0.10138876985863];
-
 T_LS_2_F = [rotLS, tLS; 0,0,0,1];
 T_F_2_LS = T_LS_2_F \ eye(4);
- 
-% tLS = tform2trvec(poseLS);
-% rotLS = tform2rotm(extLS);
-
-% poseLS = [rotLS, tLS; 0, 0, 0, 1];
-% extLS = poseLS \ eye(4);
 
 plotCamera('Location', tLS, 'Orientation', rotLS', 'Size', 0.05, 'AxesVisible', true, 'Color', [0,0,1]); hold on;
 
@@ -143,7 +151,6 @@ zPoly = [zPoly, minRange.*sin(theta(end:-1:1))];
 yPoly = [yPoly, yPoly(1)];
 zPoly = [zPoly, zPoly(1)];
 xPoly = zeros(size(zPoly));
-
 viewPlanePoly = polyshape(yPoly, zPoly);
 
 %transform verticies of view-plane from frame to line-scan coordinate frame
@@ -154,16 +161,15 @@ xyzTrans = T_LS_2_F*homPts;
 x = xyzTrans(1,:);
 y = xyzTrans(2,:);
 z = xyzTrans(3,:);
+
 vpPatch = patch(x,y,z, [0,0,1], 'FaceAlpha', 0.3);
 
 vpDispCheck = uicontrol('Parent',figSim,'Style','checkbox', 'String', 'Display View-plane', 'Position', [20,25,200,20] , 'Value', true);
 vpDispCheck.Callback = @(src, eventData) vp_callback(src, eventData, vpPatch);
 
-%normal vector of the line-scan view-plane in its coordinate frame (normal
-%vector is inline with the x-axis)
-vpNormal = [1;0;0];
-
 %% 2D plot of radiant intensity on view-plane
+
+cab(figSim);
 
 %Pose of the light source w.r.t to the c.f of the line-scan camera
 T_S_2_LS = T_F_2_LS * T_S_2_F;
@@ -172,14 +178,15 @@ T_S_2_LS = T_F_2_LS * T_S_2_F;
 %camera's view-plane
 yDist = 0.5; %max distance left/right
 zDist = 1; %max distance along z-direction
+lsFigYlims = [-0.5,0.5];
+lsFigZlims = [T_S_2_LS(3,4),0.8];
+irradVarVPMax = 2.5;
 
 %Create mesh
 y = linspace(-yDist, yDist, 100);
 z = linspace(T_S_2_LS(3,4), zDist, 100);
 x = 0;
-
 [X,Y,Z] = meshgrid(x,y,z);
-
 %remove extra unnecessary singular dimension
 X = squeeze(X);
 Y = squeeze(Y);
@@ -201,25 +208,16 @@ radIntMag = lightSrc.RadiantIntensityMesh(XFrame, YFrame, ZFrame);
 
 %plot 2D view-plane surface with line-scan camera as origin. Only plotting
 %YZ plane.
-figViewPlane = figure('Name', 'Radiant intensity on line-scan view-plane');
-surf(Y, Z, radIntMag, 'EdgeColor', 'none'); hold on;
-xlabel('y');
-ylabel('z');
-title('View-plane RADIANT INTENSITY')
-view(2);
-scatter3(0, 0, (maxRadiInt+1), 200, [0,0,1], 'filled', 'MarkerEdgeColor', [0,0,0]); %line-scan origin
-colormap(hot(1000));
-colorbar; caxis([0, maxRadiInt]);
-axis equal;
+figViewPlane = figure('Name', 'Irradiance on line-scan view-plane');
 
-%plot light source in the line-scan camera coordinate frame (green)
-scatter3(T_S_2_LS(2,4), T_S_2_LS(3,4), (maxRadiInt+1), 200, [0,1,0], 'filled','MarkerEdgeColor', [0,0,0]);
+[~,cb] = plotlinescanviewplane(Y, Z, radIntMag, maxRadiInt, T_S_2_LS, T_F_2_LS, [yPoly;zPoly], lsFigYlims, lsFigZlims);
+cb.Label.String = 'Irradiance';
+cb.Label.Interpreter = 'latex';
+cb.Label.FontSize = defaultFontSize;
+cb.Label.FontName = defaultFont;
 
-%plot frame camera in line-scan coordinate frame
-scatter3(T_F_2_LS(2,4), T_F_2_LS(3,4), (maxRadiInt+1), 200, [1,0,0], 'filled', 'MarkerEdgeColor', [0,0,0]);
-
-%plot fov of line-scan on view-plane
-plot3(yPoly, zPoly, (maxRadiInt+1)*ones(size(yPoly)), 'Color', [1,1,1], 'LineWidth', 2);
+imgName = fullfile(resultsDir, 'irradiance_slice.png');
+exportpropergraphic(figViewPlane, imgName,  hwRatioDefault);
 
 %% Reflective target
 % assume that the target is an infinitely tall flat surface which is
@@ -334,7 +332,7 @@ for sampleLoop = 1:noSamples
     for pixelLoop = 1:length(vtargetPix)
         pnt = normTargetPixHom(:,pixelLoop);
                 
-        [pntOnTarget, valid] = camerapixelrayintersectplane(pnt', normTargetLS',  targetCentPos');
+        [pntOnTarget, valid] = CameraPixelRayIntersectPlane(pnt', normTargetLS', targetCentPos');
         
         %ray intersection was not valid
         if ~valid
@@ -364,13 +362,13 @@ for sampleLoop = 1:noSamples
     figure(figSim);
     line(targetPtsFrame(1,:), targetPtsFrame(2,:), targetPtsFrame(3,:), 'Color', [0,0,0], 'LineWidth', 2); hold on;
     trplot(T_target_2_F, 'rviz', 'length', (maxRange - minRange)*0.05);
-    drawnow();
     
     %plot line in the view-plane intensity plot
     figure(figViewPlane);
     line(targetPtsLS(2,:), targetPtsLS(3,:), maxRadiInt.*ones(size(targetPtsLS(2,:))), 'Color', [0,0,0], 'LineWidth', 2);    
-    drawnow();
 end
+
+drawnow();
 
 %% Measure pixel intensity at the 3D location on the target which is relative to the frame camera
 
@@ -395,19 +393,14 @@ for sampleLoop = 1:noSamples
         targetInten(pt) = lightSrc.RadianceOutMaterialPoint(targetPtsFrame(:,pt), targetNormal, target.Reflectance);
     end
     
-    
-    
+
     %add gaussian white noise to target pixel measurements
     targetIntenNoise = targetInten + normrnd(0, intNoiseSigma, size(targetInten));
-    
-%     targetNormRadiance = (respCurveGrad.*targetInten)./(maxPixInt - darkPixInt) + normrnd(0, intNoiseSigma, size(targetInten));
-    
+        
     targetSampleNormRadiance(sampleLoop) = {targetIntenNoise};
 end
 
 %% Combine the samples such that they can be analysed by regressional approaches
-
-
 
 %number of trials is equal to the number of samples. Each consective trial
 %will add an extra sample
@@ -468,8 +461,6 @@ for trials = 1:noSamples
     optPhiTrials(trials, :) = optPhi;
     resNormTrials(trials) = resNorm;
     
-
-    
     rankFIM(trials) = curRankFIM;
     eigFIM(trials,:) = curEigFIM;
 end
@@ -477,35 +468,7 @@ end
 %% Results of least squares
 
 %close all figures except for the simulator and the view-plane ground truth
-cab(figSim, figViewPlane, figRIDPolar);
-
-% %calculate absolute errors in the estimated parameters
-% abs_phi0 = abs(optPhiTrials(:,1) - maxRadiInt);
-% abs_mu = abs(optPhiTrials(:,2) - mu);
-% abs_r_d = abs(optPhiTrials(:,3) - r_d);
-% 
-% %plot absolute error
-% figAbsLS = figure('Name', 'Absolute Erorr in Estimated Parameters');
-% subplot(1,3,1);
-% plot(1:noSamples, abs_phi0);
-% xlabel('samples');
-% ylabel('absolute error in \Phi_0');
-% ylim([0, max(abs_phi0)])
-% grid on;
-% 
-% subplot(1,3,2);
-% plot(1:noSamples, abs_mu);
-% xlabel('samples');
-% ylabel('absolute error in \mu');
-% ylim([0, max(abs_mu)])
-% grid on;
-% 
-% subplot(1,3,3);
-% plot(1:noSamples, abs_r_d);
-% xlabel('samples');
-% ylabel('absolute error in r_d');
-% ylim([0, max(abs_r_d)])
-% grid on;
+%cab(figSim, figViewPlane, figRIDPolar);
 
 %plot residual
 figure('Name', 'Optimisation Residuals');
@@ -526,7 +489,6 @@ ylabel('Eigenvalue Magnitude');
 ylim([min(eigFIM, [], 'all'), max(eigFIM, [], 'all')])
 grid on;
 
-
 %Compare Radiant intensity view-plane image of ground-truth parameters and
 %estimated parameters
 
@@ -534,117 +496,19 @@ lightSrcLeastSqrs = LightSimulator(locLightSrc, rotLightSrc, optPhiTrials(end, 1
 
 %plot the light intensity produced by the light source on the line-scan
 %camera's view-plane
-yDist = 0.5; %max distance left/right
-zDist = 1; %max distance along z-direction
-
-%Create mesh
-y = linspace(-yDist, yDist, 100);
-z = linspace(T_S_2_LS(3,4), zDist, 100);
-x = 0;
-
-[X,Y,Z] = meshgrid(x,y,z);
-
-%remove extra unnecessary singular dimension
-X = squeeze(X);
-Y = squeeze(Y);
-Z = squeeze(Z);
-
-%These points are in the line-scan c.f, transform them into
-%the frame camera c.f (world coordinates)
-pts = [X(:),Y(:),Z(:)]';
-ptsHom = [pts; ones(1, size(pts, 2))];
-ptsHomFrame = T_LS_2_F*ptsHom;
-
-rows = size(X);
-%reshape to mesh
-XFrame = reshape(ptsHomFrame(1,:),rows);
-YFrame = reshape(ptsHomFrame(2,:),rows);
-ZFrame = reshape(ptsHomFrame(3,:),rows);
-
 radIntMagGroundtruth = lightSrc.RadiantIntensityMesh(XFrame, YFrame, ZFrame);
-% radNormGroundTruth = (respCurveGrad.*radIntMagGroundtruth)./(maxPixInt - darkPixInt);
-
 radIntMagLeastSqr = lightSrcLeastSqrs.RadiantIntensityMesh(XFrame, YFrame, ZFrame);
-% radNormLeastSqr = (respCurveGrad.*radIntMagLeastSqr)./(maxPixInt - darkPixInt);
-% diffRad = abs(radNormGroundTruth - radNormLeastSqr);
-
-
-% radNormMax = (respCurveGrad.*maxRadiInt)./(maxPixInt - darkPixInt);
-
 diffRad = abs(radIntMagGroundtruth - radIntMagLeastSqr);
 
+hfig = figure();
+plotlinescanviewplane(Y, Z, radIntMagLeastSqr, maxRadiInt, T_S_2_LS, T_F_2_LS, [yPoly;zPoly], lsFigYlims, lsFigZlims);
+imgName = fullfile(resultsDir, 'sim_ls_a.png');
+exportpropergraphic(hfig, imgName,  hwRatioDefault);
 
-%plot 2D view-plane surface with line-scan camera as origin. Only plotting
-%YZ plane.
-figLeastSqrViewPlane = figure('Name', 'Radiant intensity view-plane from least squares');
-% s1 = subplot(1,3,1);
-% surf(Y, Z, radIntMagGroundtruth, 'EdgeColor', 'none'); hold on;
-% xlabel('y');
-% ylabel('z');
-% title('Ground-truth')
-% view(2);
-% scatter3(0, 0, (maxRadiInt+1), 200, [0,0,1], 'filled', 'MarkerEdgeColor', [0,0,0]); %line-scan origin
-% colormap(s1, hot);
-% caxis([0, maxRadiInt]);
-% % colorbar;
-% % axis equal;
-% 
-% %plot light source in the line-scan camera coordinate frame (green)
-% scatter3(T_S_2_LS(2,4), T_S_2_LS(3,4), (maxRadiInt+1), 200, [0,1,0], 'filled','MarkerEdgeColor', [0,0,0]);
-% 
-% %plot frame camera in line-scan coordinate frame
-% scatter3(extLS(2,4), extLS(3,4), (maxRadiInt+1), 200, [1,0,0], 'filled', 'MarkerEdgeColor', [0,0,0]);
-% 
-% %plot fov of line-scan on view-plane
-% plot3(yPoly, zPoly, (maxRadiInt+1)*ones(size(yPoly)), 'Color', [1,1,1], 'LineWidth', 2);
-
-
-
-s2 = subplot(1,2,1);
-surf(Y, Z, radIntMagLeastSqr, 'EdgeColor', 'none'); hold on;
-xlabel('y');
-ylabel('z');
-title('Least Squares View-Plane')
-view(2);
-scatter3(0, 0, (maxRadiInt+1), 200, [0,0,1], 'filled', 'MarkerEdgeColor', [0,0,0]); %line-scan origin
-colormap(s2, hot);
-caxis([0, maxRadiInt]);
-colorbar;
-% axis equal;
-
-%plot light source in the line-scan camera coordinate frame (green)
-scatter3(T_S_2_LS(2,4), T_S_2_LS(3,4), (maxRadiInt+1), 200, [0,1,0], 'filled','MarkerEdgeColor', [0,0,0]);
-
-%plot frame camera in line-scan coordinate frame
-scatter3(T_F_2_LS(2,4), T_F_2_LS(3,4), (maxRadiInt+1), 200, [1,0,0], 'filled', 'MarkerEdgeColor', [0,0,0]);
-
-%plot fov of line-scan on view-plane
-plot3(yPoly, zPoly, (maxRadiInt+1)*ones(size(yPoly)), 'Color', [1,1,1], 'LineWidth', 2);
-
-
-
-maxDiff = max(diffRad, [], 'all');
-
-s3 = subplot(1,2,2);
-surf(Y, Z, diffRad, 'EdgeColor', 'none'); hold on;
-xlabel('y');
-ylabel('z');
-title('Absolute Difference')
-view(2);
-scatter3(0, 0, (maxDiff+1), 200, [0,0,1], 'filled', 'MarkerEdgeColor', [0,0,0]); %line-scan origin
-colormap(s3, bone);
-caxis([0, maxDiff]);
-colorbar;
-% axis equal;
-
-%plot light source in the line-scan camera coordinate frame (green)
-scatter3(T_S_2_LS(2,4), T_S_2_LS(3,4), (maxRadiInt+1), 200, [0,1,0], 'filled','MarkerEdgeColor', [0,0,0]);
-
-%plot frame camera in line-scan coordinate frame
-scatter3(T_F_2_LS(2,4), T_F_2_LS(3,4), (maxRadiInt+1), 200, [1,0,0], 'filled', 'MarkerEdgeColor', [0,0,0]);
-
-%plot fov of line-scan on view-plane
-plot3(yPoly, zPoly, (maxRadiInt+1)*ones(size(yPoly)), 'Color', [1,1,1], 'LineWidth', 2);
+hfig = figure();
+plotlinescanviewplane(Y, Z, diffRad, maxRadiInt, T_S_2_LS, T_F_2_LS, [yPoly;zPoly], lsFigYlims, lsFigZlims, bone(1000));
+imgName = fullfile(resultsDir, 'sim_ls_c.png');
+exportpropergraphic(hfig, imgName,  hwRatioDefault);
 
 
 %% GP Testing Points
@@ -654,10 +518,6 @@ ptsHomLightSrc = T_S_2_F\ptsHomFrame;
 ptsLightSrc = ptsHomLightSrc(1:3, :);
 
 [ptsRadius,ptsTheta] = cart2sphZ(ptsLightSrc(1,:), ptsLightSrc(2,:), ptsLightSrc(3,:));
-
-
-% [ptsRadius,ptsTheta] = cart2rtlightsrc(ptsLightSrc);
-
 testingX = [ptsRadius', ptsTheta'];
 
 %% GP Training Points
@@ -678,750 +538,154 @@ targetPntFrameHom = [targetPntFrame; ones(1, length(targetPntFrame(1,:)))];
 targetPntLightSrcHom = T_S_2_F\targetPntFrameHom;
 targetPntLightSrc = targetPntLightSrcHom(1:3, :);
 
-% [ptsRadius,ptsTheta] = cart2rtlightsrc(targetPntLightSrc);
 [ptsRadius,ptsTheta] = cart2sphZ(targetPntLightSrc(1,:), targetPntLightSrc(2,:), targetPntLightSrc(3,:));
-
 gpTrainingdata = [ptsRadius', ptsTheta', radIntMagPnt'];
-
-
-downSamplingGP = 50;
+downSamplingGP = 30;
 
 %% Building model with GP Zero-mean non-symmetric
 
-cab(figSim, figRIDPolar, figViewPlane, figLeastSqrViewPlane);
-
-plotMaxHeight = 100;
-
 %Build zero-mean GP model
-[mu, varMu, hypOpt] = LightSrcOptmGP(0, gpTrainingdata, testingX, downSamplingGP, 1000, intNoiseSigma,false);
-
-figGP_ZeroMean = figure('Name','GP Zero-Mean');
-s1 = subplot(1,3,1);
-surfGP = surf(Y, Z, zeros(size(Y)), 'EdgeColor', 'none'); hold on;
-xlabel('y');
-ylabel('z');
-title('Zero-mean GP View-Plane')
-view(2);
-scatter3(0, 0, (plotMaxHeight+1), 200, [0,0,1], 'filled', 'MarkerEdgeColor', [0,0,0]); %line-scan origin
-colormap(s1, hot);
-caxis([0, maxRadiInt]);
-colorbar;
-
-%plot light source in the line-scan camera coordinate frame (green)
-scatter3(T_S_2_LS(2,4), T_S_2_LS(3,4), (plotMaxHeight+1), 200, [0,1,0], 'filled','MarkerEdgeColor', [0,0,0]);
-%plot frame camera in line-scan coordinate frame
-scatter3(T_F_2_LS(2,4), T_F_2_LS(3,4), (plotMaxHeight+1), 200, [1,0,0], 'filled', 'MarkerEdgeColor', [0,0,0]);
-%plot fov of line-scan on view-plane
-plot3(yPoly, zPoly, (plotMaxHeight+1)*ones(size(yPoly)), 'Color', [1,1,1], 'LineWidth', 2);
-
-s2 = subplot(1,3,2);
-surfGP_var = surf(Y, Z, zeros(size(Y)), 'EdgeColor', 'none'); hold on;
-xlabel('y');
-ylabel('z');
-title('Variance')
-view(2);
-scatter3(0, 0, (plotMaxHeight+1), 200, [0,0,1], 'filled', 'MarkerEdgeColor', [0,0,0]); %line-scan origin
-colormap(s2, turbo);
-caxis([0, 1]);
-colorbar;
-
-%plot light source in the line-scan camera coordinate frame (green)
-scatter3(T_S_2_LS(2,4), T_S_2_LS(3,4), (plotMaxHeight+1), 200, [0,1,0], 'filled','MarkerEdgeColor', [0,0,0]);
-%plot frame camera in line-scan coordinate frame
-scatter3(T_F_2_LS(2,4), T_F_2_LS(3,4), (plotMaxHeight+1), 200, [1,0,0], 'filled', 'MarkerEdgeColor', [0,0,0]);
-%plot fov of line-scan on view-plane
-plot3(yPoly, zPoly, (plotMaxHeight+1)*ones(size(yPoly)), 'Color', [1,1,1], 'LineWidth', 2);
-
-
-
-figure(figGP_ZeroMean);
-
-%Plotting training points on figure
-targetPntLSHom = (T_LS_2_F\targetPntFrameHom)';
-
-lsTrainPlotPt = (downsample(targetPntLSHom, downSamplingGP))';
-scatter3(lsTrainPlotPt(2,:), lsTrainPlotPt(3,:), (maxRadiInt+1)*ones(size(lsTrainPlotPt(3,:))), 20, [0,1,1], 'filled','MarkerEdgeColor', [0,0,0], 'LineWidth', 0.1);
+[mu, varMu] = LightSrcOptmGP(testingX, gpTrainingdata, 0, intNoiseSigma, downSamplingGP, 10000, false);
 
 radIntGP = reshape(mu,rows);
+radIntGPZero = radIntGP;
 radVar = reshape(varMu,rows);
-
-radIntGPZero = radIntGP; 
-
-%update figure with GP model
-surfGP.ZData = radIntGP;
-surfGP_var.ZData = radVar;
-
-colormap(s2, turbo);
-caxis([0, max(radVar, [], 'all')]);
-drawnow();
-
-
-
-
 diffRad = abs(radIntGP - radIntMagGroundtruth);
-maxDiff = max(diffRad, [], 'all');
 
-% Absolute difference plot
-s3 = subplot(1,3,3);
-surf(Y, Z, diffRad, 'EdgeColor', 'none'); hold on;
-xlabel('y');
-ylabel('z');
-title('Absolute Difference')
-view(2);
-scatter3(0, 0, (maxDiff+1), 200, [0,0,1], 'filled', 'MarkerEdgeColor', [0,0,0]); %line-scan origin
-colormap(s3, bone);
-caxis([0, maxDiff]);
-colorbar;
-% axis equal;
+hfig = figure();
+plotlinescanviewplane(Y, Z, radIntGP, maxRadiInt, T_S_2_LS, T_F_2_LS, [yPoly;zPoly], lsFigYlims, lsFigZlims);
+imgName = fullfile(resultsDir, 'sim_gp_z_a.png');
+exportpropergraphic(hfig, imgName,  hwRatioDefault);
 
-%plot light source in the line-scan camera coordinate frame (green)
-scatter3(T_S_2_LS(2,4), T_S_2_LS(3,4), (maxRadiInt+1), 200, [0,1,0], 'filled','MarkerEdgeColor', [0,0,0]);
+hfig = figure();
+plotlinescanviewplane(Y, Z, radVar, irradVarVPMax, T_S_2_LS, T_F_2_LS, [yPoly;zPoly], lsFigYlims, lsFigZlims, turbo(1000));
+imgName = fullfile(resultsDir, 'sim_gp_z_b.png');
+exportpropergraphic(hfig, imgName,  hwRatioDefault);
 
-%plot frame camera in line-scan coordinate frame
-scatter3(T_F_2_LS(2,4), T_F_2_LS(3,4), (maxRadiInt+1), 200, [1,0,0], 'filled', 'MarkerEdgeColor', [0,0,0]);
-
-%plot fov of line-scan on view-plane
-plot3(yPoly, zPoly, (maxRadiInt+1)*ones(size(yPoly)), 'Color', [1,1,1], 'LineWidth', 2);
-drawnow();
-
-
-
-
-
-
-
-
-
-
-
-
-%plot 2D view-plane surface with line-scan camera as origin. Only plotting
-%YZ plane.
-figDiffGP_ZeroMean = figure('Name', 'Radiant intensity view-plane from GP');
-% s1 = subplot(1,3,1);
-% surf(Y, Z, radIntMagGroundtruth, 'EdgeColor', 'none'); hold on;
-% xlabel('y');
-% ylabel('z');
-% title('Ground-truth')
-% view(2);
-% scatter3(0, 0, (maxRadiInt+1), 200, [0,0,1], 'filled', 'MarkerEdgeColor', [0,0,0]); %line-scan origin
-% colormap(s1, hot);
-% caxis([0, maxRadiInt]);
-% % colorbar;
-% % axis equal;
-
-%plot light source in the line-scan camera coordinate frame (green)
-scatter3(T_S_2_LS(2,4), T_S_2_LS(3,4), (maxRadiInt+1), 200, [0,1,0], 'filled','MarkerEdgeColor', [0,0,0]);
-%plot frame camera in line-scan coordinate frame
-scatter3(T_F_2_LS(2,4), T_F_2_LS(3,4), (maxRadiInt+1), 200, [1,0,0], 'filled', 'MarkerEdgeColor', [0,0,0]);
-%plot fov of line-scan on view-plane
-plot3(yPoly, zPoly, (maxRadiInt+1)*ones(size(yPoly)), 'Color', [1,1,1], 'LineWidth', 2);
-
-
-s2 = subplot(1,2,1);
-surf(Y, Z, radIntGP, 'EdgeColor', 'none'); hold on;
-xlabel('y');
-ylabel('z');
-title('Zero-mean GP View-Plane')
-view(2);
-scatter3(0, 0, (maxRadiInt+1), 200, [0,0,1], 'filled', 'MarkerEdgeColor', [0,0,0]); %line-scan origin
-colormap(s2, hot);
-caxis([0, maxRadiInt]);
-colorbar;
-% axis equal;
-
-%plot light source in the line-scan camera coordinate frame (green)
-scatter3(T_S_2_LS(2,4), T_S_2_LS(3,4), (maxRadiInt+1), 200, [0,1,0], 'filled','MarkerEdgeColor', [0,0,0]);
-%plot frame camera in line-scan coordinate frame
-scatter3(T_F_2_LS(2,4), T_F_2_LS(3,4), (maxRadiInt+1), 200, [1,0,0], 'filled', 'MarkerEdgeColor', [0,0,0]);
-%plot fov of line-scan on view-plane
-plot3(yPoly, zPoly, (maxRadiInt+1)*ones(size(yPoly)), 'Color', [1,1,1], 'LineWidth', 2);
-
-
-diffRad = abs(radIntGP - radIntMagGroundtruth);
-maxDiff = max(diffRad, [], 'all');
-
-% Absolute difference plot
-s3 = subplot(1,2,2);
-surf(Y, Z, diffRad, 'EdgeColor', 'none'); hold on;
-xlabel('y');
-ylabel('z');
-title('Absolute Difference')
-view(2);
-scatter3(0, 0, (maxDiff+1), 200, [0,0,1], 'filled', 'MarkerEdgeColor', [0,0,0]); %line-scan origin
-colormap(s3, bone);
-caxis([0, maxDiff]);
-colorbar;
-% axis equal;
-
-%plot light source in the line-scan camera coordinate frame (green)
-scatter3(T_S_2_LS(2,4), T_S_2_LS(3,4), (maxRadiInt+1), 200, [0,1,0], 'filled','MarkerEdgeColor', [0,0,0]);
-
-%plot frame camera in line-scan coordinate frame
-scatter3(T_F_2_LS(2,4), T_F_2_LS(3,4), (maxRadiInt+1), 200, [1,0,0], 'filled', 'MarkerEdgeColor', [0,0,0]);
-
-%plot fov of line-scan on view-plane
-plot3(yPoly, zPoly, (maxRadiInt+1)*ones(size(yPoly)), 'Color', [1,1,1], 'LineWidth', 2);
-drawnow();
-
-
-% %% Building model with GP Zero-mean Symmetric
-% 
-% cab(figSim, figViewPlane, figAbsLS, figLeastSqrViewPlane, figGP_ZeroMean, figDiffGP_ZeroMean);
-% 
-% 
-% %Build zero-mean GP model
-% [mu, varMu, hypOpt] = LightSrcOptmGP(0, gpTrainingdataSYM, testingX, downSamplingGP, 1000, false);
-% 
-% figGP_ZeroMeanSYM = figure('Name','GP Zero-Mean Symmetric');
-% s1 = subplot(1,2,1);
-% surfGP = surf(Y, Z, zeros(size(Y)), 'EdgeColor', 'none'); hold on;
-% xlabel('y');
-% ylabel('z');
-% title('Zero-mean Symmetric View-Plane GP')
-% view(2);
-% scatter3(0, 0, (maxRadiInt+1), 200, [0,0,1], 'filled', 'MarkerEdgeColor', [0,0,0]); %line-scan origin
-% colormap(s1, hot);
-% caxis([0, maxRadiInt]);
-% colorbar;
-% 
-% %plot light source in the line-scan camera coordinate frame (green)
-% scatter3(T_S_2_LS(2,4), T_S_2_LS(3,4), (maxRadiInt+1), 200, [0,1,0], 'filled','MarkerEdgeColor', [0,0,0]);
-% %plot frame camera in line-scan coordinate frame
-% scatter3(extLS(2,4), extLS(3,4), (maxRadiInt+1), 200, [1,0,0], 'filled', 'MarkerEdgeColor', [0,0,0]);
-% %plot fov of line-scan on view-plane
-% plot3(yPoly, zPoly, (maxRadiInt+1)*ones(size(yPoly)), 'Color', [1,1,1], 'LineWidth', 2);
-% 
-% s2 = subplot(1,2,2);
-% surfGP_var = surf(Y, Z, zeros(size(Y)), 'EdgeColor', 'none'); hold on;
-% xlabel('y');
-% ylabel('z');
-% title('Variance')
-% view(2);
-% scatter3(0, 0, (maxRadiInt+1), 200, [0,0,1], 'filled', 'MarkerEdgeColor', [0,0,0]); %line-scan origin
-% colormap(s2, turbo);
-% caxis([0, 1]);
-% colorbar;
-% 
-% %plot light source in the line-scan camera coordinate frame (green)
-% scatter3(T_S_2_LS(2,4), T_S_2_LS(3,4), (maxRadiInt+1), 200, [0,1,0], 'filled','MarkerEdgeColor', [0,0,0]);
-% %plot frame camera in line-scan coordinate frame
-% scatter3(extLS(2,4), extLS(3,4), (maxRadiInt+1), 200, [1,0,0], 'filled', 'MarkerEdgeColor', [0,0,0]);
-% %plot fov of line-scan on view-plane
-% plot3(yPoly, zPoly, (maxRadiInt+1)*ones(size(yPoly)), 'Color', [1,1,1], 'LineWidth', 2);
-% 
-% 
-% 
-% figure(figGP_ZeroMeanSYM);
-% 
-% %Plotting training points on figure
-% targetPntLSHom = (poseLS\targetPntFrameHomSYM)';
-% 
-% lsTrainPlotPt = (downsample(targetPntLSHom, downSamplingGP))';
-% scatter3(lsTrainPlotPt(2,:), lsTrainPlotPt(3,:), (maxRadiInt+1)*ones(size(lsTrainPlotPt(3,:))), 20, [0,1,1], 'filled','MarkerEdgeColor', [0,0,0], 'LineWidth', 0.1);
-% 
-% radIntGP = reshape(mu,rows);
-% radVar = reshape(varMu,rows);
-% 
-% %update figure with GP model
-% surfGP.ZData = radIntGP;
-% surfGP_var.ZData = radVar;
-% drawnow();
-% 
-% 
-% %plot 2D view-plane surface with line-scan camera as origin. Only plotting
-% %YZ plane.
-% figDiffGP_ZeroMeanSYM = figure('Name', 'Radiant intensity view-plane from GP');
-% % s1 = subplot(1,3,1);
-% % surf(Y, Z, radIntMagGroundtruth, 'EdgeColor', 'none'); hold on;
-% % xlabel('y');
-% % ylabel('z');
-% % title('Ground-truth')
-% % view(2);
-% % scatter3(0, 0, (maxRadiInt+1), 200, [0,0,1], 'filled', 'MarkerEdgeColor', [0,0,0]); %line-scan origin
-% % colormap(s1, hot);
-% % caxis([0, maxRadiInt]);
-% % colorbar;
-% % axis equal;
-% 
-% %plot light source in the line-scan camera coordinate frame (green)
-% scatter3(T_S_2_LS(2,4), T_S_2_LS(3,4), (maxRadiInt+1), 200, [0,1,0], 'filled','MarkerEdgeColor', [0,0,0]);
-% %plot frame camera in line-scan coordinate frame
-% scatter3(extLS(2,4), extLS(3,4), (maxRadiInt+1), 200, [1,0,0], 'filled', 'MarkerEdgeColor', [0,0,0]);
-% %plot fov of line-scan on view-plane
-% plot3(yPoly, zPoly, (maxRadiInt+1)*ones(size(yPoly)), 'Color', [1,1,1], 'LineWidth', 2);
-% 
-% 
-% s2 = subplot(1,2,1);
-% surf(Y, Z, radIntGP, 'EdgeColor', 'none'); hold on;
-% xlabel('y');
-% ylabel('z');
-% title('Zero-mean GP Non-Symmetric')
-% view(2);
-% scatter3(0, 0, (maxRadiInt+1), 200, [0,0,1], 'filled', 'MarkerEdgeColor', [0,0,0]); %line-scan origin
-% colormap(s2, hot);
-% caxis([0, maxRadiInt]);
-% colorbar;
-% % axis equal;
-% 
-% %plot light source in the line-scan camera coordinate frame (green)
-% scatter3(T_S_2_LS(2,4), T_S_2_LS(3,4), (maxRadiInt+1), 200, [0,1,0], 'filled','MarkerEdgeColor', [0,0,0]);
-% %plot frame camera in line-scan coordinate frame
-% scatter3(extLS(2,4), extLS(3,4), (maxRadiInt+1), 200, [1,0,0], 'filled', 'MarkerEdgeColor', [0,0,0]);
-% %plot fov of line-scan on view-plane
-% plot3(yPoly, zPoly, (maxRadiInt+1)*ones(size(yPoly)), 'Color', [1,1,1], 'LineWidth', 2);
-% 
-% 
-% diffRad = abs(radIntGP - radIntMagGroundtruth);
-% maxDiff = max(diffRad, [], 'all');
-% 
-% % Absolute difference plot
-% s3 = subplot(1,2,2);
-% surf(Y, Z, diffRad, 'EdgeColor', 'none'); hold on;
-% xlabel('y');
-% ylabel('z');
-% title('Absolute Difference')
-% view(2);
-% scatter3(0, 0, (maxDiff+1), 200, [0,0,1], 'filled', 'MarkerEdgeColor', [0,0,0]); %line-scan origin
-% colormap(s3, bone);
-% caxis([0, maxDiff]);
-% colorbar;
-% % axis equal;
-% 
-% %plot light source in the line-scan camera coordinate frame (green)
-% scatter3(T_S_2_LS(2,4), T_S_2_LS(3,4), (maxRadiInt+1), 200, [0,1,0], 'filled','MarkerEdgeColor', [0,0,0]);
-% 
-% %plot frame camera in line-scan coordinate frame
-% scatter3(extLS(2,4), extLS(3,4), (maxRadiInt+1), 200, [1,0,0], 'filled', 'MarkerEdgeColor', [0,0,0]);
-% 
-% %plot fov of line-scan on view-plane
-% plot3(yPoly, zPoly, (maxRadiInt+1)*ones(size(yPoly)), 'Color', [1,1,1], 'LineWidth', 2);
-% drawnow();
+hfig = figure();
+plotlinescanviewplane(Y, Z, diffRad, maxRadiInt, T_S_2_LS, T_F_2_LS, [yPoly;zPoly], lsFigYlims, lsFigZlims, bone(1000));
+imgName = fullfile(resultsDir, 'sim_gp_z_c.png');
+exportpropergraphic(hfig, imgName,  hwRatioDefault);
 
 %% Building model with GP non-Symmetric Constant Mean
 
-cab(figSim, figViewPlane, figLeastSqrViewPlane, figGP_ZeroMean, ...
-    figDiffGP_ZeroMean);
-
 %Build zero-mean GP model
-[mu, varMu, hypOpt] = LightSrcOptmGP(1, gpTrainingdata, testingX, downSamplingGP, 1000, intNoiseSigma, false);
-
-figGP_ConstMean = figure('Name','GP Constant Mean');
-s1 = subplot(1,3,1);
-surfGP = surf(Y, Z, zeros(size(Y)), 'EdgeColor', 'none'); hold on;
-xlabel('y');
-ylabel('z');
-title('Const-mean GP View-Plane')
-view(2);
-scatter3(0, 0, (maxRadiInt+1), 200, [0,0,1], 'filled', 'MarkerEdgeColor', [0,0,0]); %line-scan origin
-colormap(s1, hot);
-caxis([0, maxRadiInt]);
-colorbar;
-
-%plot light source in the line-scan camera coordinate frame (green)
-scatter3(T_S_2_LS(2,4), T_S_2_LS(3,4), (maxRadiInt+1), 200, [0,1,0], 'filled','MarkerEdgeColor', [0,0,0]);
-%plot frame camera in line-scan coordinate frame
-scatter3(T_F_2_LS(2,4), T_F_2_LS(3,4), (maxRadiInt+1), 200, [1,0,0], 'filled', 'MarkerEdgeColor', [0,0,0]);
-%plot fov of line-scan on view-plane
-plot3(yPoly, zPoly, (maxRadiInt+1)*ones(size(yPoly)), 'Color', [1,1,1], 'LineWidth', 2);
-
-s2 = subplot(1,3,2);
-surfGP_var = surf(Y, Z, zeros(size(Y)), 'EdgeColor', 'none'); hold on;
-xlabel('y');
-ylabel('z');
-title('Variance')
-view(2);
-scatter3(0, 0, (maxRadiInt+1), 200, [0,0,1], 'filled', 'MarkerEdgeColor', [0,0,0]); %line-scan origin
-colormap(s2, turbo);
-caxis([0, 1]);
-colorbar;
-
-%plot light source in the line-scan camera coordinate frame (green)
-scatter3(T_S_2_LS(2,4), T_S_2_LS(3,4), (maxRadiInt+1), 200, [0,1,0], 'filled','MarkerEdgeColor', [0,0,0]);
-%plot frame camera in line-scan coordinate frame
-scatter3(T_F_2_LS(2,4), T_F_2_LS(3,4), (maxRadiInt+1), 200, [1,0,0], 'filled', 'MarkerEdgeColor', [0,0,0]);
-%plot fov of line-scan on view-plane
-plot3(yPoly, zPoly, (maxRadiInt+1)*ones(size(yPoly)), 'Color', [1,1,1], 'LineWidth', 2);
-
-
-
-figure(figGP_ConstMean);
-
-%Plotting training points on figure
-targetPntLSHom = (T_LS_2_F\targetPntFrameHom)';
-
-lsTrainPlotPt = (downsample(targetPntLSHom, downSamplingGP))';
-scatter3(lsTrainPlotPt(2,:), lsTrainPlotPt(3,:), (maxRadiInt+1)*ones(size(lsTrainPlotPt(3,:))), 20, [0,1,1], 'filled','MarkerEdgeColor', [0,0,0], 'LineWidth', 0.1);
+[mu, varMu] = LightSrcOptmGP(testingX, gpTrainingdata, 1, intNoiseSigma, downSamplingGP, 10000, false);
 
 radIntGP = reshape(mu,rows);
 radVar = reshape(varMu,rows);
-
-%update figure with GP model
-surfGP.ZData = radIntGP;
-surfGP_var.ZData = radVar;
-
-colormap(s2, turbo);
-caxis([0, max(radVar, [], 'all')]);
-drawnow();
-
 diffRad = abs(radIntGP - radIntMagGroundtruth);
-maxDiff = max(diffRad, [], 'all');
 
-% Absolute difference plot
-s3 = subplot(1,3,3);
-surf(Y, Z, diffRad, 'EdgeColor', 'none'); hold on;
-xlabel('y');
-ylabel('z');
-title('Absolute Difference')
-view(2);
-scatter3(0, 0, (maxDiff+1), 200, [0,0,1], 'filled', 'MarkerEdgeColor', [0,0,0]); %line-scan origin
-colormap(s3, bone);
-caxis([0, maxDiff]);
-colorbar;
-% axis equal;
+hfig = figure();
+plotlinescanviewplane(Y, Z, radIntGP, maxRadiInt, T_S_2_LS, T_F_2_LS, [yPoly;zPoly], lsFigYlims, lsFigZlims);
+imgName = fullfile(resultsDir, 'sim_gp_const_a.png');
+exportpropergraphic(hfig, imgName,  hwRatioDefault);
 
-%plot light source in the line-scan camera coordinate frame (green)
-scatter3(T_S_2_LS(2,4), T_S_2_LS(3,4), (maxRadiInt+1), 200, [0,1,0], 'filled','MarkerEdgeColor', [0,0,0]);
+hfig = figure();
+plotlinescanviewplane(Y, Z, radVar, irradVarVPMax, T_S_2_LS, T_F_2_LS, [yPoly;zPoly], lsFigYlims, lsFigZlims, turbo(1000));
+imgName = fullfile(resultsDir, 'sim_gp_const_b.png');
+exportpropergraphic(hfig, imgName,  hwRatioDefault);
 
-%plot frame camera in line-scan coordinate frame
-scatter3(T_F_2_LS(2,4), T_F_2_LS(3,4), (maxRadiInt+1), 200, [1,0,0], 'filled', 'MarkerEdgeColor', [0,0,0]);
+hfig = figure();
+plotlinescanviewplane(Y, Z, diffRad, maxRadiInt, T_S_2_LS, T_F_2_LS, [yPoly;zPoly], lsFigYlims, lsFigZlims, bone(1000));
+imgName = fullfile(resultsDir, 'sim_gp_const_c.png');
+exportpropergraphic(hfig, imgName,  hwRatioDefault);
 
-%plot fov of line-scan on view-plane
-plot3(yPoly, zPoly, (maxRadiInt+1)*ones(size(yPoly)), 'Color', [1,1,1], 'LineWidth', 2);
-drawnow();
-
-
-
-%plot 2D view-plane surface with line-scan camera as origin. Only plotting
-%YZ plane.
-figDiffGP_ConstMean = figure('Name', 'Radiant intensity view-plane from GP');
-% s1 = subplot(1,3,1);
-% surf(Y, Z, radIntMagGroundtruth, 'EdgeColor', 'none'); hold on;
-% xlabel('y');
-% ylabel('z');
-% title('Ground-truth')
-% view(2);
-% scatter3(0, 0, (maxRadiInt+1), 200, [0,0,1], 'filled', 'MarkerEdgeColor', [0,0,0]); %line-scan origin
-% colormap(s1, hot);
-% caxis([0, maxRadiInt]);
-% colorbar;
-% axis equal;
-
-%plot light source in the line-scan camera coordinate frame (green)
-scatter3(T_S_2_LS(2,4), T_S_2_LS(3,4), (maxRadiInt+1), 200, [0,1,0], 'filled','MarkerEdgeColor', [0,0,0]);
-%plot frame camera in line-scan coordinate frame
-scatter3(T_F_2_LS(2,4), T_F_2_LS(3,4), (maxRadiInt+1), 200, [1,0,0], 'filled', 'MarkerEdgeColor', [0,0,0]);
-%plot fov of line-scan on view-plane
-plot3(yPoly, zPoly, (maxRadiInt+1)*ones(size(yPoly)), 'Color', [1,1,1], 'LineWidth', 2);
-
-
-s2 = subplot(1,2,1);
-surf(Y, Z, radIntGP, 'EdgeColor', 'none'); hold on;
-xlabel('y');
-ylabel('z');
-title('Const-mean GP View-Plane')
-view(2);
-scatter3(0, 0, (maxRadiInt+1), 200, [0,0,1], 'filled', 'MarkerEdgeColor', [0,0,0]); %line-scan origin
-colormap(s2, hot);
-caxis([0, maxRadiInt]);
-colorbar;
-% axis equal;
-
-%plot light source in the line-scan camera coordinate frame (green)
-scatter3(T_S_2_LS(2,4), T_S_2_LS(3,4), (maxRadiInt+1), 200, [0,1,0], 'filled','MarkerEdgeColor', [0,0,0]);
-%plot frame camera in line-scan coordinate frame
-scatter3(T_F_2_LS(2,4), T_F_2_LS(3,4), (maxRadiInt+1), 200, [1,0,0], 'filled', 'MarkerEdgeColor', [0,0,0]);
-%plot fov of line-scan on view-plane
-plot3(yPoly, zPoly, (maxRadiInt+1)*ones(size(yPoly)), 'Color', [1,1,1], 'LineWidth', 2);
-
-
-diffRad = abs(radIntGP - radIntMagGroundtruth);
-maxDiff = max(diffRad, [], 'all');
-
-% Absolute difference plot
-s3 = subplot(1,2,2);
-surf(Y, Z, diffRad, 'EdgeColor', 'none'); hold on;
-xlabel('y');
-ylabel('z');
-title('Absolute Difference')
-view(2);
-scatter3(0, 0, (maxDiff+1), 200, [0,0,1], 'filled', 'MarkerEdgeColor', [0,0,0]); %line-scan origin
-colormap(s3, bone);
-caxis([0, maxDiff]);
-colorbar;
-% axis equal;
-
-%plot light source in the line-scan camera coordinate frame (green)
-scatter3(T_S_2_LS(2,4), T_S_2_LS(3,4), (maxRadiInt+1), 200, [0,1,0], 'filled','MarkerEdgeColor', [0,0,0]);
-
-%plot frame camera in line-scan coordinate frame
-scatter3(T_F_2_LS(2,4), T_F_2_LS(3,4), (maxRadiInt+1), 200, [1,0,0], 'filled', 'MarkerEdgeColor', [0,0,0]);
-
-%plot fov of line-scan on view-plane
-plot3(yPoly, zPoly, (maxRadiInt+1)*ones(size(yPoly)), 'Color', [1,1,1], 'LineWidth', 2);
-drawnow();
 
 %% Building model with GP Non-Symmetric light source mean function
 
-cab(figSim, figViewPlane, figLeastSqrViewPlane, figGP_ZeroMean, ...
-    figDiffGP_ZeroMean, figGP_ConstMean, ...
-    figDiffGP_ConstMean);
-
-
 %Build zero-mean GP model
-[mu, varMu, hypOpt] = LightSrcOptmGP(2, gpTrainingdata, testingX, downSamplingGP, 10000, intNoiseSigma, false);
-
-figGP_LightSrcMean = figure('Name','GP Light Source Mean Non-Symmetric');
-s1 = subplot(1,3,1);
-surfGP = surf(Y, Z, zeros(size(Y)), 'EdgeColor', 'none'); hold on;
-xlabel('y');
-ylabel('z');
-title('Light-Source-mean GP View-Plane')
-view(2);
-scatter3(0, 0, (maxRadiInt+1), 200, [0,0,1], 'filled', 'MarkerEdgeColor', [0,0,0]); %line-scan origin
-colormap(s1, hot);
-caxis([0, maxRadiInt]);
-colorbar;
-
-%plot light source in the line-scan camera coordinate frame (green)
-scatter3(T_S_2_LS(2,4), T_S_2_LS(3,4), (maxRadiInt+1), 200, [0,1,0], 'filled','MarkerEdgeColor', [0,0,0]);
-%plot frame camera in line-scan coordinate frame
-scatter3(T_F_2_LS(2,4), T_F_2_LS(3,4), (maxRadiInt+1), 200, [1,0,0], 'filled', 'MarkerEdgeColor', [0,0,0]);
-%plot fov of line-scan on view-plane
-plot3(yPoly, zPoly, (maxRadiInt+1)*ones(size(yPoly)), 'Color', [1,1,1], 'LineWidth', 2);
-
-s2 = subplot(1,3,2);
-surfGP_var = surf(Y, Z, zeros(size(Y)), 'EdgeColor', 'none'); hold on;
-xlabel('y');
-ylabel('z');
-title('Variance')
-view(2);
-scatter3(0, 0, (maxRadiInt+1), 200, [0,0,1], 'filled', 'MarkerEdgeColor', [0,0,0]); %line-scan origin
-colormap(s2, turbo);
-caxis([0, 1]);
-colorbar;
-
-%plot light source in the line-scan camera coordinate frame (green)
-scatter3(T_S_2_LS(2,4), T_S_2_LS(3,4), (maxRadiInt+1), 200, [0,1,0], 'filled','MarkerEdgeColor', [0,0,0]);
-%plot frame camera in line-scan coordinate frame
-scatter3(T_F_2_LS(2,4), T_F_2_LS(3,4), (maxRadiInt+1), 200, [1,0,0], 'filled', 'MarkerEdgeColor', [0,0,0]);
-%plot fov of line-scan on view-plane
-plot3(yPoly, zPoly, (maxRadiInt+1)*ones(size(yPoly)), 'Color', [1,1,1], 'LineWidth', 2);
-
-
-
-figure(figGP_LightSrcMean);
-
-%Plotting training points on figure
-targetPntLSHom = (T_LS_2_F\targetPntFrameHom)';
-
-lsTrainPlotPt = (downsample(targetPntLSHom, downSamplingGP))';
-scatter3(lsTrainPlotPt(2,:), lsTrainPlotPt(3,:), (maxRadiInt+1)*ones(size(lsTrainPlotPt(3,:))), 20, [0,1,1], 'filled','MarkerEdgeColor', [0,0,0], 'LineWidth', 0.1);
+[mu, varMu] = LightSrcOptmGP(testingX, gpTrainingdata, 3, intNoiseSigma, downSamplingGP, 10000, false);
 
 radIntGP = reshape(mu,rows);
 radVar = reshape(varMu,rows);
-
-%update figure with GP model
-surfGP.ZData = radIntGP;
-surfGP_var.ZData = radVar;
-
-colormap(s2, turbo);
-caxis([0, max(radVar, [], 'all')]);
-drawnow();
-
 diffRad = abs(radIntGP - radIntMagGroundtruth);
-maxDiff = max(diffRad, [], 'all');
 
-% Absolute difference plot
-s3 = subplot(1,3,3);
-surf(Y, Z, diffRad, 'EdgeColor', 'none'); hold on;
-xlabel('y');
-ylabel('z');
-title('Absolute Difference')
-view(2);
-scatter3(0, 0, (maxDiff+1), 200, [0,0,1], 'filled', 'MarkerEdgeColor', [0,0,0]); %line-scan origin
-colormap(s3, bone);
-caxis([0, maxDiff]);
-colorbar;
-% axis equal;
+hfig = figure();
+plotlinescanviewplane(Y, Z, radIntGP, maxRadiInt, T_S_2_LS, T_F_2_LS, [yPoly;zPoly], lsFigYlims, lsFigZlims);
+imgName = fullfile(resultsDir, 'sim_gp_lightsrc_a.png');
+exportpropergraphic(hfig, imgName,  hwRatioDefault);
 
-%plot light source in the line-scan camera coordinate frame (green)
-scatter3(T_S_2_LS(2,4), T_S_2_LS(3,4), (maxRadiInt+1), 200, [0,1,0], 'filled','MarkerEdgeColor', [0,0,0]);
+hfig = figure();
+plotlinescanviewplane(Y, Z, radVar, irradVarVPMax, T_S_2_LS, T_F_2_LS, [yPoly;zPoly], lsFigYlims, lsFigZlims, turbo(1000));
+imgName = fullfile(resultsDir, 'sim_gp_lightsrc_b.png');
+exportpropergraphic(hfig, imgName,  hwRatioDefault);
 
-%plot frame camera in line-scan coordinate frame
-scatter3(T_F_2_LS(2,4), T_F_2_LS(3,4), (maxRadiInt+1), 200, [1,0,0], 'filled', 'MarkerEdgeColor', [0,0,0]);
-
-%plot fov of line-scan on view-plane
-plot3(yPoly, zPoly, (maxRadiInt+1)*ones(size(yPoly)), 'Color', [1,1,1], 'LineWidth', 2);
-drawnow();
-
-
-
-%plot 2D view-plane surface with line-scan camera as origin. Only plotting
-%YZ plane.
-figDiffGP_LightSrcMean = figure('Name', 'Radiant intensity view-plane from GP');
-% s1 = subplot(1,3,1);
-% surf(Y, Z, radIntMagGroundtruth, 'EdgeColor', 'none'); hold on;
-% xlabel('y');
-% ylabel('z');
-% title('Ground-truth')
-% view(2);
-% scatter3(0, 0, (maxRadiInt+1), 200, [0,0,1], 'filled', 'MarkerEdgeColor', [0,0,0]); %line-scan origin
-% colormap(s1, hot);
-% caxis([0, maxRadiInt]);
-% colorbar;
-% axis equal;
-
-%plot light source in the line-scan camera coordinate frame (green)
-scatter3(T_S_2_LS(2,4), T_S_2_LS(3,4), (maxRadiInt+1), 200, [0,1,0], 'filled','MarkerEdgeColor', [0,0,0]);
-%plot frame camera in line-scan coordinate frame
-scatter3(T_F_2_LS(2,4), T_F_2_LS(3,4), (maxRadiInt+1), 200, [1,0,0], 'filled', 'MarkerEdgeColor', [0,0,0]);
-%plot fov of line-scan on view-plane
-plot3(yPoly, zPoly, (maxRadiInt+1)*ones(size(yPoly)), 'Color', [1,1,1], 'LineWidth', 2);
-
-
-s2 = subplot(1,2,1);
-surf(Y, Z, radIntGP, 'EdgeColor', 'none'); hold on;
-xlabel('y');
-ylabel('z');
-title('Light-Source-mean View-Plane')
-view(2);
-scatter3(0, 0, (maxRadiInt+1), 200, [0,0,1], 'filled', 'MarkerEdgeColor', [0,0,0]); %line-scan origin
-colormap(s2, hot);
-caxis([0, maxRadiInt]);
-colorbar;
-% axis equal;
-
-%plot light source in the line-scan camera coordinate frame (green)
-scatter3(T_S_2_LS(2,4), T_S_2_LS(3,4), (maxRadiInt+1), 200, [0,1,0], 'filled','MarkerEdgeColor', [0,0,0]);
-%plot frame camera in line-scan coordinate frame
-scatter3(T_F_2_LS(2,4), T_F_2_LS(3,4), (maxRadiInt+1), 200, [1,0,0], 'filled', 'MarkerEdgeColor', [0,0,0]);
-%plot fov of line-scan on view-plane
-plot3(yPoly, zPoly, (maxRadiInt+1)*ones(size(yPoly)), 'Color', [1,1,1], 'LineWidth', 2);
-
-
-diffRad = abs(radIntGP - radIntMagGroundtruth);
-maxDiff = max(diffRad, [], 'all');
-
-% Absolute difference plot
-s3 = subplot(1,2,2);
-surf(Y, Z, diffRad, 'EdgeColor', 'none'); hold on;
-xlabel('y');
-ylabel('z');
-title('Absolute Difference')
-view(2);
-scatter3(0, 0, (maxDiff+1), 200, [0,0,1], 'filled', 'MarkerEdgeColor', [0,0,0]); %line-scan origin
-colormap(s3, bone);
-caxis([0, maxDiff]);
-colorbar;
-% axis equal;
-
-%plot light source in the line-scan camera coordinate frame (green)
-scatter3(T_S_2_LS(2,4), T_S_2_LS(3,4), (maxRadiInt+1), 200, [0,1,0], 'filled','MarkerEdgeColor', [0,0,0]);
-
-%plot frame camera in line-scan coordinate frame
-scatter3(T_F_2_LS(2,4), T_F_2_LS(3,4), (maxRadiInt+1), 200, [1,0,0], 'filled', 'MarkerEdgeColor', [0,0,0]);
-
-%plot fov of line-scan on view-plane
-plot3(yPoly, zPoly, (maxRadiInt+1)*ones(size(yPoly)), 'Color', [1,1,1], 'LineWidth', 2);
-drawnow();
+hfig = figure();
+plotlinescanviewplane(Y, Z, diffRad, maxRadiInt, T_S_2_LS, T_F_2_LS, [yPoly;zPoly], lsFigYlims, lsFigZlims, bone(1000));
+imgName = fullfile(resultsDir, 'sim_gp_lightsrc_c.png');
+exportpropergraphic(hfig, imgName,  hwRatioDefault);
 
 %% 
 
-figure('Name', 'ABS of LS vs GP');
-
+%calculate absolute differences w.r.t to ground-truth
 diffRadLS = abs(radIntMagGroundtruth - radIntMagLeastSqr);
 diffRadGP = abs(radIntMagGroundtruth - radIntGP);
 diffRadZero = abs(radIntMagGroundtruth - radIntGPZero);
 
-
-maxDiff = max(diffRadLS, [], 'all');
-maxDiff = max([maxDiff, max(diffRadGP, [], 'all')], [], 'all');
-
-
-% Absolute difference plot
-s1 = subplot(1,2,1);
-surf(Y, Z, diffRadLS, 'EdgeColor', 'none'); hold on;
-xlabel('y');
-ylabel('z');
-title('Absolute Difference in Least Squares')
-view(2);
-scatter3(0, 0, (maxDiff+1), 200, [0,0,1], 'filled', 'MarkerEdgeColor', [0,0,0]); %line-scan origin
-colormap(s1, bone);
-caxis([0, maxDiff]);
-colorbar;
-
-
-
-% Absolute difference plot
-s2 = subplot(1,2,2);
-surf(Y, Z, diffRadGP, 'EdgeColor', 'none'); hold on;
-xlabel('y');
-ylabel('z');
-title('Absolute Difference in GP')
-view(2);
-scatter3(0, 0, (maxDiff+1), 200, [0,0,1], 'filled', 'MarkerEdgeColor', [0,0,0]); %line-scan origin
-colormap(s2, bone);
-caxis([0, maxDiff]);
-colorbar;
-
-
+%vectorise 2d matrices
 Yvec = Y(:);
 Zvec = Z(:);
 diffLSvec = diffRadLS(:);
 diffGPvec = diffRadGP(:);
 diffGPZvec = diffRadZero(:);
 
+%view-plane polygon verticies
 YpolyVP = viewPlanePoly.Vertices(:,1);
 ZpolyVP = viewPlanePoly.Vertices(:,2);
 
+%determine if points are inside/outside view-plane
 ptsInVPMask = inpolygon(Yvec, Zvec, YpolyVP, ZpolyVP);
 
+%separate inside/outside points
 diffLS_in_VP = diffLSvec(ptsInVPMask);
-% diffLS_in_VP(end+1:10000) = 0;
-
 diffLS_out_VP = diffLSvec(~ptsInVPMask);
-% diffLS_out_VP(end+1:10000) = 0;
-
-
 diffGP_in_VP = diffGPvec(ptsInVPMask);
-% diffGP_in_VP(end+1:10000) = 0;
-
 diffGP_out_VP = diffGPvec(~ptsInVPMask);
-% diffGP_out_VP(end+1:10000) = 0;
-
 diffGPZ_out_VP = diffGPZvec(~ptsInVPMask);
 diffGPZ_in_VP = diffGPZvec(ptsInVPMask);
 
 
-
-% radDiffCell = {diffLS_in_VP, diffLS_out_VP, diffGP_in_VP, diffGP_out_VP};
-% varLabel = {'LS in VP', 'LS out VP', 'GP in VP', 'GP out VP'};
-
-
-radDiffCell = {diffLS_in_VP, diffLS_out_VP, diffGP_in_VP, diffGP_out_VP, diffGPZ_in_VP, diffGPZ_out_VP};
-varLabel = {'LS in VP', 'LS out VP', 'GP in VP', 'GP out VP', 'GP ZERO in VP', 'GP ZERO out VP'};
-% 
-figure();
-violin(radDiffCell, 'xlabel', varLabel);
+radDiffCell = {diffLS_in_VP, diffLS_out_VP,  diffGPZ_in_VP, diffGPZ_out_VP, diffGP_in_VP, diffGP_out_VP};
+varLabel = {'Inside', 'Outside', 'Inside', 'Outside', 'Inside', 'Outside'};
 
 
-% radDiffTable = table(diffLS_in_VP, diffLS_out_VP, diffGP_in_VP, diffGP_out_VP, 'VariableNames', {'LS in VP', 'LS out VP', 'GP in VP', 'GP out VP'});
-% 
-% 
-% figure();
-% 
-% vioPl = violinplot(radDiffTable);
-% vioPl.Sh
-% viol1 = violinplot(diffLS_in_VP, 'LS in VP'); hold on;
-% viol2 = violinplot(diffLS_out_VP, 'LS out VP'); 
+hfig = figure();
+
+%violin plot colours
+violinCols = [
+0.5	0.5	1.0;
+0.5	0.5	1.0;
+0	1	1;
+0	1	1;
+1	1	0;
+1	1	0;
+];
+
+violin(radDiffCell, 'xlabel', varLabel, 'ylabel', 'Fitted Absolute Difference', 'facecolor', violinCols, 'facealpha', 1); hold on;
+ylim([-inf, maxRadiInt])
+ylabel('Fitted Absolute Difference');
+set(gca, 'YGrid', 'on', 'XGrid', 'off')
+annotation('textbox',...
+    [0.23 0.015 0.06 0.04],...
+    'String',{'Least Squares'},...  
+    'FitBoxToText','on', 'EdgeColor', 'none', 'HorizontalAlignment','center');
+
+annotation('textbox',...
+    [0.49 0.015 0.06 0.04],...
+    'String',{'GP Zero-Mean'},...  
+    'FitBoxToText','on', 'EdgeColor', 'none', 'HorizontalAlignment','center');
+
+annotation('textbox',...
+    [0.75 0.015 0.06 0.04],...
+    'String',{'GP Light-Src-Mean'},...  
+    'FitBoxToText','on', 'EdgeColor', 'none', 'HorizontalAlignment','center');
 
 
+imgName = fullfile(resultsDir, 'violin.png');
+exportpropergraphic(hfig, imgName,  0.7);
 
-grid on;
-
-%%
-
+%% CALLBACK functions
 
 function vp_callback(src, ~, vpPatch)
 value = get(src,'Value');

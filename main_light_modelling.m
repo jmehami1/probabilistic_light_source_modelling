@@ -6,7 +6,7 @@
 % be determined prior to building the models
 
 %Author: Jasprabhjit Mehami, 13446277
-
+clc;
 close all;
 clear;
 
@@ -27,6 +27,9 @@ addpath(genpath(['ext_lib', filesep, 'IPPE']));
 
 %MEX functions for ArUco pose estimation
 addpath(genpath(['ext_lib', filesep, 'mex_aruco']));
+
+addpath(fullfile('ext_lib', 'export_fig'))
+
 
 %code for this project
 addpath('src_code');
@@ -65,12 +68,6 @@ cur_stdRadianceNoise = (stdRadianceNoisePer/100);
 
 %frame camera intrinsic parameters file
 frameIntrFile = ['frame_camera_intrinsic', filesep, frameCamera, '.mat'];
-
-% if frameCamera
-%     frameIntrFile = ['frame_camera_intrinsic', filesep, 'blackfly.mat'];
-% else
-%     frameIntrFile = ['frame_camera_intrinsic', filesep, 'primesense.mat'];
-% end
 
 if ~exist(frameIntrFile, 'file')
     error("Frame camera intrinsic parameters not found");
@@ -121,9 +118,9 @@ numImages = numImagesHS;
 
 
 %result directory
-resultDir = [sourDir, filesep, 'Result'];
-if ~exist(resultDir, 'dir')
-    mkdir(resultDir);
+resultsDir = [sourDir, filesep, 'Result'];
+if ~exist(resultsDir, 'dir')
+    mkdir(resultsDir);
 end
 
 
@@ -141,12 +138,17 @@ end
 
 ligSrcYaml = yaml.ReadYaml([ligTrigPath, ligTrigFile]);
 
-
-%line-scan frame camera calibration parameters file
+if usingTestData
 cameraSysCaliFile = ['camera_system_calibration', filesep, 'camera_system_optimised_parameters.mat'];
 if ~exist(cameraSysCaliFile, 'file')
     error('camera system optimised parameters file not found');
 end
+else
+%line-scan frame camera calibration parameters file
+[camSysFile, camSysPath] = uigetfile([ligTrigStartDir, '*.mat'], 'Provide camera system calibration mat file', 'MultiSelect', 'off');
+cameraSysCaliFile = fullfile(camSysPath, camSysFile);
+end
+
 
 %white stripe reflectance CSV file
 whiteStripeReflFile = ['parameter_files', filesep, 'white_stripe_reflectance.csv'];
@@ -339,7 +341,7 @@ if hasOpenCV
             
             drawnow();
             
-            %edge points transformed into the frame camera c.f
+            %edge points tr'rg  nsformed into the frame camera c.f
             patEdgePtsFrameHom = extPosePattern(:,:,numGoodImg)*patEdgePtsHom;
             
             figure(figSim);
@@ -547,15 +549,18 @@ ptsFrameHom = [ptsOnTarget'; ones(1,length(ptsOnTarget(:,1)))];
 %Transform points to LS C.F
 ptsLSHom = T_F_2_LS*ptsFrameHom;
 
-% %pose of light source w.r.t to LS
-% T_S_2_LS = T_F_2_LS*T_S_2_F;
-% T_LS_2_S = T_S_2_LS\eye(4);
-
 %Create dense mesh of points using the edges of the measured line-scan
 %points
 x = mean(ptsLSHom(1,:));
-y = linspace(min(ptsLSHom(2,:)), max(ptsLSHom(2,:)), 100);
-z = linspace(min(ptsLSHom(3,:)), max(ptsLSHom(3,:)), 100);
+rangeExpandRatio = 0.25;
+
+%expand the y and z limits 
+yzMin = [min(ptsLSHom(2,:)), min(ptsLSHom(3,:))]
+yzMin = yzMin - abs(rangeExpandRatio.*yzMin)
+yzMax = [max(ptsLSHom(2,:)), max(ptsLSHom(3,:))]
+yzMax = yzMax + abs(rangeExpandRatio.*yzMax)
+y = linspace(yzMin(1), yzMax(1), 400);
+z = linspace(yzMin(2), yzMax(2), 400);
 [X,Y,Z] = meshgrid(x,y,z);
 
 %remove extra unnecessary singular dimension
@@ -576,6 +581,8 @@ ptsTestLightSrc = ptsTestLightSrcHom(1:3, :);
 
 %Training points without radiant intensity
 [ptsRadius,ptsTheta] = cart2sphZ(ptsTestLightSrc(1,:), ptsTestLightSrc(2,:), ptsTestLightSrc(3,:));
+% [ptsRadius,ptsTheta] = cart2rtlightsrc(ptsTestLightSrc(1,:), ptsTestLightSrc(2,:), ptsTestLightSrc(3,:));
+
 testingX = [ptsRadius', ptsTheta'];
 
 %Reshape the testing points in the frame camera C.F. into a mesh
@@ -631,6 +638,7 @@ ptsLightSrc = ptsTestLightSrcHom(1:3, :);
 
 %Training points without radiant intensity
 [ptsRadius,ptsTheta] = cart2sphZ(ptsLightSrc(1,:), ptsLightSrc(2,:), ptsLightSrc(3,:));
+% [ptsRadius,ptsTheta] = cart2rtlightsrc(ptsLightSrc(1,:), ptsLightSrc(2,:), ptsLightSrc(3,:));
 
 trainingXY = [ptsRadius', ptsTheta'];
 
@@ -658,8 +666,9 @@ varVP_GP = zeros([rows, numBands]);
 runTraining = true;
 
 %check if GP was previously optimised
-if exist([resultDir, filesep, 'gp_lightsrc_optm.mat'], 'file')
-    load([resultDir, filesep, 'gp_lightsrc_optm.mat']);
+if exist([resultsDir, filesep, 'gp_lightsrc_optm.mat'], 'file')
+    disp('Loading existing trained GP light source mean model');
+    load([resultsDir, filesep, 'gp_lightsrc_optm.mat']);
     
     %if downsampling and STD radiance noise have not changed, GP training is not necessary.
     if (curDownSamplingGP == downSamplingGP) && (stdRadianceNoise == cur_stdRadianceNoise)
@@ -671,39 +680,26 @@ end
 if runTraining
     %cell arrays to store hyperparameters and training data for each band
     hypOptCell = cell(numBands, 1);
-%     trainingXYCell = cell(numBands, 1);
     downSamplingGP = curDownSamplingGP; %set current downSamplingGP
     stdRadianceNoise = cur_stdRadianceNoise; % set current radiance noise
     
     for bandLoop = 1:numBands
         trainingXY(:,3) = radIntVP_Meas(:, bandLoop);
-        
-        %Train GP model and query for test data
-%         [mu, varMu, hypOpt, trainingXYDown] = LightSrcOptmGP(3, trainingXY, testingX, stdRadianceNoise, downSamplingGP, 100000, false);
-        [mu, varMu, curHypOptStruct] = LightSrcOptmGP(testingX, trainingXY, 3, stdRadianceNoise, downSamplingGP, 100000, false);
-
-        
+        [mu, varMu, curHypOptStruct] = LightSrcOptmGP(testingX, trainingXY, 3, stdRadianceNoise, downSamplingGP, 10000, false);      
         radIntVP_GP(:,:,bandLoop) = reshape(mu,rows);
         varVP_GP(:,:,bandLoop) = reshape(varMu,rows);
-        
         hypOptCell(bandLoop) = {curHypOptStruct};
-%         trainingXYCell(bandLoop) = {trainingXYDown};
-        
-        fprintf('Optimised band %i of %i\n', bandLoop, numBands);
+        fprintf('GP optimised and queried band %i of %i\n', bandLoop, numBands);
     end
     
-    save([resultDir, filesep, 'gp_lightsrc_optm.mat'], 'hypOptCell', 'downSamplingGP', 'stdRadianceNoise');
+    save([resultsDir, filesep, 'gp_lightsrc_optm.mat'], 'hypOptCell', 'downSamplingGP', 'stdRadianceNoise');
 else
     for bandLoop = 1:numBands
-%         trainingXY = trainingXYCell{bandLoop};
-        curHypOptStruct = hypOptCell{bandLoop};
-        
-        %Query for test data only
-        [mu, varMu] = LightSrcOptmGP(testingX, curHypOptStruct);
-        
+        curHypOptStruct = hypOptCell{bandLoop};        
+        [mu, varMu] = LightSrcOptmGP(testingX, curHypOptStruct); 
         radIntVP_GP(:,:,bandLoop) = reshape(mu,rows);
         varVP_GP(:,:,bandLoop) = reshape(varMu,rows);
-        fprintf('Optimised band %i of %i\n', bandLoop, numBands);
+        fprintf('GP queried band %i of %i\n', bandLoop, numBands);
     end
 end
 
@@ -735,7 +731,7 @@ hold on;
 
 xlabel('y');
 ylabel('z');
-title('Measured Radiance')
+% title('Measured Radiance')
 view(2);
 colormap(sRadiance, hot(10000));
 % axis equal;
@@ -754,7 +750,7 @@ hold on;
 
 xlabel('y');
 ylabel('z');
-title('Dot Product')
+% title('Dot Product')
 view(2);
 colormap(sDot, parula(10000));
 % axis equal;
@@ -774,7 +770,7 @@ hold on;
 
 xlabel('y');
 ylabel('z');
-title('Estimated Radiant Intensity')
+% title('Estimated Radiant Intensity')
 view(2);
 colormap(sMeas, hot(10000));
 % axis equal;
@@ -806,7 +802,8 @@ figLS_VP = figure('Name', 'Line-scan View-plane models');
 
 %%%%%%%%%%%%%%%% measured view-plane
 sMeas = subplot(1,3,1);
-scatMeas = scatter3(ptsLSHom(2,:), ptsLSHom(3,:), radIntVP_Meas(:,1), 10, radIntVP_Meas(:,1), 'filled');
+scatMeas = scatter3(ptsLSHom ...
+    (2,:), ptsLSHom(3,:), radIntVP_Meas(:,1), 10, radIntVP_Meas(:,1), 'filled');
 hold on;
 
 maxInt = max(radIntVP_Meas(:,1));
@@ -816,10 +813,15 @@ maxInt = max(radIntVP_Meas(:,1));
 
 xlabel('y');
 ylabel('z');
-title('Measured')
+% title('Measured')
 view(2);
 colormap(sMeas, hot(10000));
 % axis equal;
+xlim([-0.12, 0.12]);
+ylim([0.31, 0.57]);
+grid off;
+
+
 
 %%%%%%%%%%%%%%%% least squares view-plane
 sLeasSqr = subplot(1,3,2);
@@ -834,10 +836,13 @@ maxInt = max([ maxInt, max(radIntVP_LeasSqr(:,:,1), [], 'all')]);
 
 xlabel('y');
 ylabel('z');
-title('Least Squares')
+% title('Least Squares')
 view(2);
 colormap(sLeasSqr, hot(10000));
 % axis equal;
+xlim([-0.12, 0.12]);
+ylim([0.31, 0.57]);
+grid off;
 
 %%%%%%%%%%%%%%%% least squares view-plane
 sGP = subplot(1,3,3);
@@ -852,13 +857,17 @@ maxInt = max([ maxInt, max(radIntVP_GP(:,:,1), [], 'all')]);
 
 xlabel('y');
 ylabel('z');
-title('Gaussian Process')
+% title('Gaussian Process')
 view(2);
 colormap(sGP, hot(10000));
 % axis equal;
+xlim([-0.12, 0.12]);
+ylim([0.31, 0.57]);
+colorbar();
+
+grid off;
 
 caxis([0, maxInt]);
-colorbar();
 
 sliderFig = figure('Name', 'Band slider', 'Position', [659,832,580,65]);
 
@@ -874,6 +883,78 @@ uicontrol('Parent',sliderFig,'Style','text','Position',[300,10,200,23],...
 % callback function at the end of the script
 slider_band.Callback = @(src, eventData) band_callback(src, eventData, scatMeas, surfLeasSqr, surfGP, radIntVP_Meas, radIntVP_LeasSqr, radIntVP_GP, sMeas, sLeasSqr, sGP);
 
+%% 
+close all;
+%%%%%%%%%%%%%%%% measured view-plane
+bandFig = 13;
+maxInt = max(radIntVP_Meas(:,bandFig),[], 'all');   
+% maxInt = max([ maxInt, max(radIntVP_LeasSqr(:,:,bandFig), [], 'all')]);
+% maxInt = max([ maxInt, max(radIntVP_GP(:,:,bandFig), [], 'all')]);
+
+hfig = figure();
+scatter3(ptsLSHom ...
+    (2,:), ptsLSHom(3,:), radIntVP_Meas(:,bandFig), 10, radIntVP_Meas(:,bandFig), 'filled');
+hold on;
+
+xlabel('y (m)');
+ylabel('z (m)');
+view(2);
+colormap(hot(10000));
+xlim([-0.12, 0.12]);
+ylim([0.3, 0.57]);
+grid off;
+colorbar();
+caxis([0, maxInt]);
+
+% a1 = gca;
+
+imgName = fullfile(resultsDir, 'exp_mes.png');
+exportpropergraphic(hfig, imgName,  1.5);
+
+
+%%%%%%%%%%%%%%%% least squares view-plane
+
+hfig = figure();
+surf(Y, Z, radIntVP_LeasSqr(:,:,bandFig), 'EdgeColor', 'none'); hold on;
+xlabel('y (m)');
+ylabel('z (m)');
+view(2);
+colormap(hot(10000));
+xlim([-0.12, 0.12]);
+ylim([0.3, 0.57]);
+grid off;
+colorbar();
+caxis([0, maxInt]);
+
+% a2 = gca;
+
+imgName = fullfile(resultsDir, 'exp_lsq.png');
+exportpropergraphic(hfig, imgName,  1.5);
+
+
+%%%%%%%%%%%%%%%% least squares view-plane
+
+hfig = figure();
+surf(Y, Z, radIntVP_GP(:,:,bandFig), 'EdgeColor', 'none'); hold on;
+xlabel('y (m)');
+ylabel('z (m)');
+view(2);
+colormap(hot(10000));
+xlim([-0.12, 0.12]);
+ylim([0.3, 0.57]);
+grid off;
+colorbar();
+caxis([0, maxInt]);
+
+% a3 = gca;
+
+% linkaxes([a1,a2,a3], 'xy');        
+
+imgName = fullfile(resultsDir, 'exp_gp.png');
+exportpropergraphic(hfig, imgName,  1.5);
+
+
+%%
 function band_callback(src, ~, scatMeas, surfLeasSqr, surfGP, ...
     radIntVP_Meas, radIntVP_LeasSqr, radIntVP_GP, sMeas, sLeasSqr, sGP)
 i = round(src.Value);

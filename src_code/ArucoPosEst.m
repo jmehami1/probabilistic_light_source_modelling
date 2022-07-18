@@ -2,6 +2,7 @@ function [rotMat, trans, found, imgOut] = ArucoPosEst(img, markerCornerCell, cam
 % Estimate the extrinsic pose of a ArUco planar board w.r.t to a frame
 % camera (Transformation from world coordinates to camera coordinates). 
 % This Aruco board can work under occluded or missing markers.
+% This function the IPPE pose estimation.
 % INPUTS:
 %       img - distorted image of ArUco board
 %       markerCornerCell - cell array of 2D corner coordinates of each marker
