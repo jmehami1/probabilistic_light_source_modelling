@@ -1,11 +1,11 @@
 # light_source_modelling
 A hyperspectral camera requires a powerful directed light source that will illuminate a surface of interest that is being captured. Understanding how the radiant intensity of this source is distributed across this surface can aid in trying to estimate material properties from the hyperspectral images. This work aims to build a probabilistic point model of a single **near-field non-isotropic** light source using a **Gaussian Process** with a **non-zero mean function**. Non-isotropic behaviour means that the light source has a **principal direction** where radiant intensity is the highest.
 
-The hyperspectral camera we have worked with captures in a line-scan manner, so therefore, we have incorporated an RGB frame camera to compensate for the missing dimension. The frame camera coordinate frame is **always** treated to be the world coordinate frame. This work assumes the camera system has been calibrated prior.
+The hyperspectral camera we have worked with captures in a line-scan manner, so therefore, we have incorporated an RGB frame camera to compensate for the missing dimension. The frame camera coordinate frame is **always** treated to be the world coordinate frame. This work assumes the camera system has been calibrated prior using calibration scripts from the **Line-scan_Frame_Camera_Calibration** repository.
 
 There are three key components to this work:
 
-1. Realistic light simulator with a real RID curve to validate GP light source model (single band)
+1. Realistic light simulator with a real RID curve to validate GP light source model for a single band
 
 2. Real data captured using camera system
 
@@ -13,7 +13,11 @@ There are three key components to this work:
 
    ​	b. Captured frame and hyperspectral images to build the GP model w.r.t to the light source.
 
-3. Estimate reflectance using different methods which incorporate the radiant intensity information from the GP light model
+3. Calculate estimated reflectance from radiance hypercubes
+
+   ​	a. Estimated reflectance using existing Robles and Krebs method with information from GP light source model.
+
+   ​	b. Estimate reflectance using our method of KrebsShape which incorporates shape information (surface normals)
 
 
 

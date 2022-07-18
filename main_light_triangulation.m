@@ -9,10 +9,18 @@ close all;
 clear;
 
 %robotics toolbox for visualising axes
-run(['rvctools' filesep 'startup_rvc.m']);
+run(['ext_lib', filesep, 'rvctools', filesep, 'startup_rvc.m']);
 
 %yaml reader package
-addpath(genpath('yamlmatlab-master'));
+addpath(genpath(['ext_lib', filesep, 'yamlmatlab-master']));
+
+%MEX functions for ArUco pose estimation
+arucoPath = ['ext_lib', filesep, 'mex_ChArUco_Pose', filesep, 'bin'];
+if exist(arucoPath, 'dir')
+    addpath(genpath(arucoPath));
+else
+    error('bin directory not found in mex_ChArUco_Pose repo. Please build repo again');
+end
 
 %parameter file location
 addpath(genpath('parameter_files'));
@@ -20,8 +28,7 @@ addpath(genpath('parameter_files'));
 %source code for this project
 addpath('src_code');
 
-%MEX functions for ArUco pose estimation
-addpath(genpath(['ext_lib', filesep, 'mex_aruco']));
+
 
 
 %parameter file
@@ -36,20 +43,16 @@ end
 
 paramYaml = yaml.ReadYaml(paramFile);
 displayOn = paramYaml.DisplayOn;
-usingBlackfly = paramYaml.UsingBlackFly;
+frameCamera = lower(paramYaml.FrameCamera);
 
 
 %% Directories and files
 
 %frame camera intrinsic parameters file
-if usingBlackfly
-    frameIntrFile = ['frame_camera_intrinsic', filesep, 'blackfly.mat'];
-else
-    frameIntrFile = ['frame_camera_intrinsic', filesep, 'primesense.mat'];
-end
+frameIntrFile = ['frame_camera_intrinsic', filesep, frameCamera, '.mat'];
 
 if ~exist(frameIntrFile, 'file')
-    error("Frame camera intrinsic parameters not found");
+    error(['Frame camera intrinsic parameters not found for ', frameCamera]);
 end
 
 %Get source directory where images are located and results will be saved
@@ -67,13 +70,13 @@ fullPathFrame = fullfile([frameDir, filesep, '*.png']);
 numImages = numel(dir(fullPathFrame));
 
 if numImages < 1
-   error('no images in provided image directory') 
+    error('no images in provided image directory')
 end
 
 %result directory
 resultDir = [sourDir, filesep, 'Result'];
 if ~exist(resultDir, 'dir')
-   mkdir(resultDir);
+    mkdir(resultDir);
 end
 
 %% Load images
@@ -114,9 +117,14 @@ distTan = cameraParams.TangentialDistortion;
 distCoefCV = [distRad(1:2), distTan, distRad(3)]; %array of distortion coefficients in opencv format
 
 %extract the error in the intrinsic parameters of the frame camera
-std_f = estimationErrors.IntrinsicsErrors.FocalLengthError;
-std_u0v0 = estimationErrors.IntrinsicsErrors.PrincipalPointError;
-stdRGB_Intr = [std_f,std_u0v0];
+if exist('estimationErrors', 'var')
+    %extract the error in the intrinsic parameters of the frame camera
+    std_f = estimationErrors.IntrinsicsErrors.FocalLengthError;
+    std_u0v0 = estimationErrors.IntrinsicsErrors.PrincipalPointError;
+    stdRGB_Intr = [std_f,std_u0v0];
+else
+    stdRGB_Intr = zeros(1,4);
+end
 
 %ChArUco pattern size
 xNumCheck = paramYaml.NumCols;
@@ -203,15 +211,17 @@ end
 
 reflCentImg = zeros(numImages, 2);
 
+SE = strel('disk',1);
 
-for curImg = 1:numImages
+
+for imgLoop = 1:numImages
     if displayOn
         clf(figG);
     end
     
     %Get the pixel coordinates of the edge of the reflective sphere on the
     %board
-    ext = extPosePattern(:,:,curImg);
+    ext = extPosePattern(:,:,imgLoop);
     patPtsHomFrame = ext*patPtsHom;
     patPtsFrame = patPtsHomFrame(1:3,:)';
     patImgPts = projectPoints(patPtsFrame, K_frame', eye(4), distCoefCV, frameImgSize);
@@ -241,25 +251,28 @@ for curImg = 1:numImages
     
     patImgPts = patImgPts';
     
-    img = imagesFrame{curImg};
-    imgGray = im2gray(img);
-    imgPatGr = uint8(zeros(size(imgGray)));
+    %convert color to grayscale
+    imgGray = im2gray(imagesFrame{imgLoop});
+
+    
+    imgGraySphere = zeros(size(imgGray), 'uint8');
     
     %extract on the pixels that contain the reflective sphere
     for v = min(patImgPts(2, :), [], 'all'):max(patImgPts(2, :), [], 'all')
         for u = min(patImgPts(1, :), [], 'all'):max(patImgPts(1, :), [], 'all')
             if (inpolygon(u, v, patImgPts(1,:), patImgPts(2,:)))
-                imgPatGr(v, u) = imgGray(v, u);
+                imgGraySphere(v, u) = imgGray(v, u);
             end
         end
     end
     
+        %convert grayscale to normalised grayscale
+    imgGraySphereNorm = mat2gray(imgGraySphere);
     
-    %thresold
-    imgBrSpot = imgPatGr > 250;
+    %thresold all pixels on the sphere
+    imgBrSpot = imgGraySphereNorm > 0.95;
     
     %erode
-    SE = strel('disk',1);
     imgBrSpot = imerode(imgBrSpot, SE);
     
     %find regions
@@ -278,7 +291,7 @@ for curImg = 1:numImages
     
     %get the centre of the region
     regCent = s(ind).Centroid;
-    reflCentImg(curImg, :) = regCent;
+    reflCentImg(imgLoop, :) = regCent;
     
     % Calculate the ellipse line
     theta = linspace(0,2*pi, noPts);
@@ -307,32 +320,32 @@ hemiCent = [xCent; yCent; 0];
 ptReflHemiFrame = zeros(numImages, 3);
 normReflHemi = zeros(numImages, 3);
 
-for curImg = 1:numImages
-    centPtImg =  reflCentImg(curImg, :)';
+for imgLoop = 1:numImages
+    centPtImg =  reflCentImg(imgLoop, :)';
     centPtImgHom = [centPtImg; 1];
     
     %normalised image coordinates
     normPt = K_frame'\centPtImgHom;
-    normPt = normPt./normPt(3,:);
+%     normPt = normPt./normPt(3,:);
     
     %centre of hemisphere relative to the frame camera
-    ext = extPosePattern(:,:,curImg);
+    ext = extPosePattern(:,:,imgLoop);
     locPatFrame = tform2trvec(ext)';
     rotPatFrame = tform2rotm(ext);
     locHemiCentFrame = locPatFrame + rotPatFrame*hemiCent;
     
-    [pt, rc] = intersect_Line_Sphere([normPt', normPt'], [locHemiCentFrame', hemiRad]);
+    [pt, rc] = intersect_Line_Sphere([[0,0,0], normPt'], [locHemiCentFrame', hemiRad]);
     
     if ~rc
         error("line-sphere intersection was not on sphere")
     end
     
-    ptReflHemiFrame(curImg, :) = pt;
+    ptReflHemiFrame(imgLoop, :) = pt;
     
     %surface normal at the intersection point on the reflective hemisphere
     normHemi = pt' - locHemiCentFrame;
     normHemi = normHemi./norm(normHemi);
-    normReflHemi(curImg, :) = normHemi;
+    normReflHemi(imgLoop, :) = normHemi;
 end
 
 %% Find the light source direction and location
@@ -381,4 +394,4 @@ grid on;
 axis equal;
 
 %light source object
-lightSrc = LightSimulator(locLightSrc, rotLightSrc, maxRadiInt, mu, r_d, distFromSrc, figSim, S);
+lightSrc = LightSimulator(locLightSrc, rotLightSrc, figSim);

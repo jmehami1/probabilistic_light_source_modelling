@@ -1,3 +1,4 @@
 #remove folder containing hypercubes and CSV in test data as they are very large and can be recreated using the images
-**/Hypercubes/
-**/SVM_Training/
+
+test_data/
+sim_results/

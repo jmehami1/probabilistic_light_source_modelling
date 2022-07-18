@@ -10,5 +10,7 @@ NumCols: 9
 
 # Parameters for the code
 DisplayOn: true
-UsingBlackFly: true
+
+# Frame camera that is used for RGB images
+FrameCamera: "l515"
 

@@ -30,7 +30,7 @@ sigmaRadianceNoisePercent: 0.05
 HasOpenCV: true
 
 # Flag for running least squares optimisations
-RunLS: false
+RunLS: true
 
 # Down-sampling rate of data for GP training
 DownSamplingGP: 50

@@ -11,11 +11,20 @@ function [r, azi, elev] = cart2sphZ(x, y, z)
 %       r - radius of point in spherical coordinates (1xn)
 %       azi - azimuth angle of point in spherical coordinates (1xn)
 %       elev - elevation angle of point in spherical coordinates (1xn)
-
+% 
 % Author: Jasprabhjit Mehami, 13446277
 
-azi = pi/2 - atan2(z,x);
+% [azi,elev,r] = cart2sph(x,y,z);
+
+azi = atan2(x,z);
+
+
+% elev = pi/2 - elev;
+
 elev = atan2(y,sqrt(x.^2 + z.^2));
+
+
+% azi = pi/2 - atan2(z,x);
 r = sqrt(x.^2 + y.^2 + z.^2);
 
 end
