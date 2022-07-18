@@ -12,5 +12,5 @@ NumCols: 9
 DisplayOn: true
 
 # Frame camera that is used for RGB images
-FrameCamera: "l515"
+FrameCamera: "blackfly"
 

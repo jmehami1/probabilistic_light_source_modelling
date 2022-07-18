@@ -4,35 +4,37 @@
 %we can find a constraint to determine the unknown direction and location.
 
 %Author: Jasprabhjit Mehami, 13446277
-
+clc;
 close all;
 clear;
 
-%robotics toolbox for visualising axes
-run(['ext_lib', filesep, 'rvctools', filesep, 'startup_rvc.m']);
+%external library directory
+addpath('ext_lib');
+
+%robotics toolbox
+run(fullfile('ext_lib', 'rvctools', 'startup_rvc.m'));
 
 %yaml reader package
-addpath(genpath(['ext_lib', filesep, 'yamlmatlab-master']));
+addpath(genpath(fullfile('ext_lib', 'yamlmatlab-master')));
 
-%MEX functions for ArUco pose estimation
-arucoPath = ['ext_lib', filesep, 'mex_ChArUco_Pose', filesep, 'bin'];
-if exist(arucoPath, 'dir')
-    addpath(genpath(arucoPath));
+%Better export of figures to images
+addpath(fullfile('ext_lib', 'export_fig'))
+
+%code for this project
+addpath('src_code');
+
+%check if mex_ChArUco_Pose has been built
+if ~exist(fullfile("ext_lib", "mex_ChArUco_Pose", "bin", "CharucoPosEst.mexa64"), 'file')
+    error("Please build mex_ChArUco_Pose submodule")
 else
-    error('bin directory not found in mex_ChArUco_Pose repo. Please build repo again');
+    addpath(genpath(fullfile("ext_lib", "mex_ChArUco_Pose")));
 end
-
-%parameter file location
-addpath(genpath('parameter_files'));
 
 %source code for this project
 addpath('src_code');
 
-
-
-
 %parameter file
-paramFile = ['parameter_files', filesep, 'light_triangulation.yaml'];
+paramFile = fullfile('parameter_files', 'light_triangulation.yaml');
 if ~exist(paramFile, 'file')
     error("YAML parameter file not found");
 end
@@ -49,22 +51,22 @@ frameCamera = lower(paramYaml.FrameCamera);
 %% Directories and files
 
 %frame camera intrinsic parameters file
-frameIntrFile = ['frame_camera_intrinsic', filesep, frameCamera, '.mat'];
+frameIntrFile = fullfile('frame_camera_intrinsic', [frameCamera, '.mat']);
 
 if ~exist(frameIntrFile, 'file')
-    error(['Frame camera intrinsic parameters not found for ', frameCamera]);
+    error('Frame camera intrinsic parameters not found for %s', frameCamera);
 end
 
 %Get source directory where images are located and results will be saved
-sourDir = uigetdir(['~', filesep], 'Provide source directory where light triangulation images are located?');
+sourDir = uigetdir('Provide source directory where light triangulation images are located?');
 
 %frame image directory
-frameDir = [sourDir, filesep, 'Frame']; %Directory containing images
+frameDir = fullfile(sourDir, 'Frame'); %Directory containing images
 if ~exist(frameDir, 'dir')
     error('Source directory does not contain directory called "Frame" which should contain RGB images');
 end
 
-fullPathFrame = fullfile([frameDir, filesep, '*.png']);
+fullPathFrame = fullfile(frameDir, '*.png');
 
 %Need to get number of images in directory
 numImages = numel(dir(fullPathFrame));
@@ -74,24 +76,14 @@ if numImages < 1
 end
 
 %result directory
-resultDir = [sourDir, filesep, 'Result'];
+resultDir = fullfile(sourDir, 'Result');
 if ~exist(resultDir, 'dir')
     mkdir(resultDir);
 end
 
-%% Load images
+%% Load intrinsic parameters and board parameters
 
-%Preallocate space for cell arrays of images
-imagesFrame = cell(1,numImages);
-
-% Load all images
-for i = 1:numImages
-    imagesFrame{i} = imread([frameDir, filesep, 'img', num2str(i),'.png']);
-end
-
-
-%% Get pose of the plane using the ChArUco pattern
-disp('Getting pose of ChArUco pattern...');
+disp('Loading intrinsic and board parameters...');
 
 load(frameIntrFile); %Load the intrinsic parameters of the camera
 
@@ -108,13 +100,13 @@ v0 = cameraParams.PrincipalPoint(2);
 thetaFrameintr = [fx, fy, u0, v0];
 
 %Size of the images from the RGB camera
-frameImgSize = size(imagesFrame{1});
-frameImgSize = frameImgSize(1:2);
+frameImgSize = cameraParams.ImageSize;
+% frameImgSize = frameImgSize(1:2);
 
 %distortion parameters
 distRad = cameraParams.RadialDistortion;
 distTan = cameraParams.TangentialDistortion;
-distCoefCV = [distRad(1:2), distTan, distRad(3)]; %array of distortion coefficients in opencv format
+distCoefCV = zeros(1,5); %array of distortion coefficients in opencv format
 
 %extract the error in the intrinsic parameters of the frame camera
 if exist('estimationErrors', 'var')
@@ -136,6 +128,22 @@ arucoSize = paramYaml.ArucoSideLength;
 frameIntrinsic = cameraIntrinsics(thetaFrameintr(1:2),thetaFrameintr(3:4), frameImgSize);
 K_frame = frameIntrinsic.IntrinsicMatrix;
 
+%% Load images
+
+disp('Loading images...');
+
+%Preallocate space for cell arrays of images
+imagesFrame = cell(1,numImages);
+
+% Load all images
+for i = 1:numImages
+    imagesFrame{i} = undistortImage(imread(fullfile(frameDir, ['img', num2str(i),'.png'])), cameraParams);
+end
+
+
+%% Get pose of the plane using the ChArUco pattern
+disp('Getting pose of ChArUco pattern...');
+
 %store all the poses of each found pattern
 extPosePattern = zeros(4,4,numImages);
 
@@ -151,21 +159,19 @@ for i = 1:numImages
     %MEX file for getting the pose using the ChArUco pattern
     [rotMat, trans, found, img] = CharucoPosEst(imagesFrame{i}, K_frame, distCoefCV, ...
         xNumCheck, yNumCheck, checkSize, arucoSize);
-    
+
     %if pose not found, ignore this image
     if ~found
         continue;
     end
-    
+
     %image is good
     numGoodImg = numGoodImg + 1;
     goodImages(numGoodImg) = i;
-    imagesFrame{i} = undistortImage(imagesFrame{i}, cameraParams);
-    
-    
+
     %store found extrinsic parameter
     extPosePattern(:,:,numGoodImg) = [rotMat,trans'; 0, 0, 0, 1];
-    
+
     %display the frame camera image with the projected axis on the pattern
     if displayOn
         clf(fig);
@@ -218,45 +224,45 @@ for imgLoop = 1:numImages
     if displayOn
         clf(figG);
     end
-    
+
     %Get the pixel coordinates of the edge of the reflective sphere on the
     %board
     ext = extPosePattern(:,:,imgLoop);
     patPtsHomFrame = ext*patPtsHom;
     patPtsFrame = patPtsHomFrame(1:3,:)';
-    patImgPts = projectPoints(patPtsFrame, K_frame', eye(4), distCoefCV, frameImgSize);
-    
+    patImgPts = projectPoints(patPtsFrame, K_frame', eye(4), [], frameImgSize);
+
     %clip pixels to remain within the size of the frame image
     for row = 1:noPts
         pixU = round(patImgPts(row,1));
-        
+
         if pixU < 1
             pixU = 1;
         elseif pixU > frameImgSize(2)
             pixU = frameImgSize(2);
         end
-        
+
         patImgPts(row,1) = pixU;
-        
+
         pixV = round(patImgPts(row,2));
-        
+
         if pixV < 1
             pixV = 1;
         elseif pixV > frameImgSize(1)
             pixV = frameImgSize(1);
         end
-        
+
         patImgPts(row,2) = pixV;
     end
-    
+
     patImgPts = patImgPts';
-    
+
     %convert color to grayscale
     imgGray = im2gray(imagesFrame{imgLoop});
 
-    
+
     imgGraySphere = zeros(size(imgGray), 'uint8');
-    
+
     %extract on the pixels that contain the reflective sphere
     for v = min(patImgPts(2, :), [], 'all'):max(patImgPts(2, :), [], 'all')
         for u = min(patImgPts(1, :), [], 'all'):max(patImgPts(1, :), [], 'all')
@@ -265,41 +271,41 @@ for imgLoop = 1:numImages
             end
         end
     end
-    
-        %convert grayscale to normalised grayscale
+
+    %convert grayscale to normalised grayscale
     imgGraySphereNorm = mat2gray(imgGraySphere);
-    
+
     %thresold all pixels on the sphere
     imgBrSpot = imgGraySphereNorm > 0.95;
-    
+
     %erode
     imgBrSpot = imerode(imgBrSpot, SE);
-    
+
     %find regions
     s = regionprops(imgBrSpot, {'Centroid','Orientation','MajorAxisLength','MinorAxisLength', 'Area'});
-    
+
     %find the region with the largest area
     ind = 1;
     maxArea = s(1).Area;
-    
+
     for i = 2:length(s)
         if s(i).Area > maxArea
             ind = i;
             maxArea = s(i).Area;
         end
     end
-    
+
     %get the centre of the region
     regCent = s(ind).Centroid;
     reflCentImg(imgLoop, :) = regCent;
-    
+
     % Calculate the ellipse line
     theta = linspace(0,2*pi, noPts);
     col = (s(ind).MajorAxisLength/2)*cos(theta);
     row = (s(ind).MinorAxisLength/2)*sin(theta);
     M = makehgtform('translate',[s(ind).Centroid, 0],'zrotate',deg2rad(-1*s(ind).Orientation));
     D = M*[col;row;zeros(1,numel(row));ones(1,numel(row))];
-    
+
     if displayOn
         set(0, 'CurrentFigure', figG);
         imshow(imgGray);hold on;
@@ -323,25 +329,24 @@ normReflHemi = zeros(numImages, 3);
 for imgLoop = 1:numImages
     centPtImg =  reflCentImg(imgLoop, :)';
     centPtImgHom = [centPtImg; 1];
-    
+
     %normalised image coordinates
     normPt = K_frame'\centPtImgHom;
-%     normPt = normPt./normPt(3,:);
-    
+
     %centre of hemisphere relative to the frame camera
     ext = extPosePattern(:,:,imgLoop);
     locPatFrame = tform2trvec(ext)';
     rotPatFrame = tform2rotm(ext);
     locHemiCentFrame = locPatFrame + rotPatFrame*hemiCent;
-    
+
     [pt, rc] = intersect_Line_Sphere([[0,0,0], normPt'], [locHemiCentFrame', hemiRad]);
-    
+
     if ~rc
         error("line-sphere intersection was not on sphere")
     end
-    
+
     ptReflHemiFrame(imgLoop, :) = pt;
-    
+
     %surface normal at the intersection point on the reflective hemisphere
     normHemi = pt' - locHemiCentFrame;
     normHemi = normHemi./norm(normHemi);
@@ -357,18 +362,19 @@ disp('Finding point source direction and location...');
 %principal direction is along the z-axis, find how much the z-axis has
 %rotated from its original direction. This rotation would be about some
 %perpindular axes
+%Go from direction vector to rotation matrix
 zAxis = [0;0;1];
 perpenDir = cross(zAxis, dirLightSrc);
 DirTheta = atan2(norm(cross(dirLightSrc,zAxis)),dot(dirLightSrc,zAxis));
 rotLightSrc = axang2rotm([perpenDir', DirTheta]);
 
-resultYaml.locLightSrc = locLightSrc;
-resultYaml.rotLightSrc = rotLightSrc;
-yaml.WriteYaml([resultDir, filesep, 'pt_light.yaml'], resultYaml);
+disp('Saving results...');
+
+save(fullfile(resultDir, 'pt_light.mat'), 'locLightSrc', 'rotLightSrc');
 
 display(locLightSrc);
 display(dirLightSrc);
-
+display(rotLightSrc);
 
 %% Setting up light simulator figure
 
