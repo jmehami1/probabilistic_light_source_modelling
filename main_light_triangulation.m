@@ -46,9 +46,11 @@ end
 paramYaml = yaml.ReadYaml(paramFile);
 displayOn = paramYaml.DisplayOn;
 frameCamera = lower(paramYaml.FrameCamera);
-
+usingTestData = paramYaml.UseTestData;
 
 %% Directories and files
+
+disp('Checking directories...')
 
 %frame camera intrinsic parameters file
 frameIntrFile = fullfile('frame_camera_intrinsic', [frameCamera, '.mat']);
@@ -58,7 +60,11 @@ if ~exist(frameIntrFile, 'file')
 end
 
 %Get source directory where images are located and results will be saved
-sourDir = uigetdir('Provide source directory where light triangulation images are located?');
+if usingTestData
+    sourDir = fullfile('test_data', 'light_trig');
+else
+    sourDir = uigetdir('Provide source directory where light triangulation images are located?');
+end
 
 %frame image directory
 frameDir = fullfile(sourDir, 'Frame'); %Directory containing images
@@ -74,6 +80,8 @@ numImages = numel(dir(fullPathFrame));
 if numImages < 1
     error('no images in provided image directory')
 end
+
+fprintf("Found directory with %i images\n", numImages);
 
 %result directory
 resultDir = fullfile(sourDir, 'Result');
@@ -219,6 +227,9 @@ reflCentImg = zeros(numImages, 2);
 
 SE = strel('disk',1);
 
+%again, used to filter images where the brightest spot can't be found
+goodImages = zeros(1,numImages);
+numGoodImg = 0;
 
 for imgLoop = 1:numImages
     if displayOn
@@ -284,6 +295,18 @@ for imgLoop = 1:numImages
     %find regions
     s = regionprops(imgBrSpot, {'Centroid','Orientation','MajorAxisLength','MinorAxisLength', 'Area'});
 
+    %no region found
+    if length(s) < 1
+        if displayOn
+            set(0, 'CurrentFigure', figG);
+            imshow(imgGray);hold on;
+            title('FAILED bright spot detection');
+            hold off;
+            drawnow();
+        end
+        
+        continue;
+    end
     %find the region with the largest area
     ind = 1;
     maxArea = s(1).Area;
@@ -295,9 +318,12 @@ for imgLoop = 1:numImages
         end
     end
 
+    numGoodImg = numGoodImg + 1;
+    goodImages(numGoodImg) = imgLoop;
+
     %get the centre of the region
     regCent = s(ind).Centroid;
-    reflCentImg(imgLoop, :) = regCent;
+    reflCentImg(numGoodImg, :) = regCent;
 
     % Calculate the ellipse line
     theta = linspace(0,2*pi, noPts);
@@ -315,6 +341,14 @@ for imgLoop = 1:numImages
         drawnow();
     end
 end
+
+%remove all data from the frame images where we could not find proper
+%bright spot
+goodImages = goodImages(1:numGoodImg);
+imagesFrame = imagesFrame(goodImages);
+extPosePattern = extPosePattern(:,:,goodImages);
+reflCentImg = reflCentImg(1:numGoodImg, :);
+numImages = numGoodImg;
 
 %% Find location of brighest spot on reflective sphere in world coordinates
 

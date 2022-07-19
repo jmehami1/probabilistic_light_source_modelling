@@ -26,11 +26,5 @@ IMG_ON_PLATFORM: 3
 # Gaussian STD noise of radiance measurements
 sigmaRadianceNoisePercent: 0.05
 
-# Does the current PC have openCV installed (this is necessary for ArUco board pose estimation)
-HasOpenCV: true
-
-# Flag for running least squares optimisations
-RunLS: true
-
 # Down-sampling rate of data for GP training
 DownSamplingGP: 50
