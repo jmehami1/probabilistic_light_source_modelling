@@ -14,3 +14,5 @@ DisplayOn: true
 # Frame camera that is used for RGB images
 FrameCamera: "blackfly"
 
+# Using the test data present in directory
+UseTestData: true
