@@ -15,13 +15,10 @@ NumberExpectedMarker: 35
 DisplayOn: false
 
 # Frame camera that is used for RGB images (either blackfly or primesense)
-FrameCamera: blackfly
+FrameCamera: l515
 
 # Using the test data present in directory
-UseTestData: true
-
-# The first number of images assumed to be on the platform (board has not been moved)
-IMG_ON_PLATFORM: 3
+UseTestData: false
 
 # Gaussian STD noise of radiance measurements
 sigmaRadianceNoisePercent: 0.05

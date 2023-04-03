@@ -62,8 +62,10 @@ cur_stdRadianceNoise = (stdRadianceNoisePer/100);
 
 disp('Checking directories...')
 
+commonDir = "/home/jmeh/Experimental_Data/lamb_carcass_une_2022/common_data/";
 %frame camera intrinsic parameters file
-frameIntrFile = fullfile('frame_camera_intrinsic', [frameCamera, '.mat']);
+% frameIntrFile = fullfile('frame_camera_intrinsic', [frameCamera, '.mat']);
+frameIntrFile = fullfile(commonDir, "frame_camera_intrinsic.mat");
 
 if ~exist(frameIntrFile, 'file')
     error("Frame camera intrinsic parameters not found");
@@ -73,7 +75,7 @@ if usingTestData
     sourDir = fullfile('test_data', 'light_map');
 else
     %Get source directory where images are located and results will be saved
-    sourDir = uigetdir('Provide source directory where light modelling images are located?');
+    sourDir = uigetdir(fullfile('~'),'Provide source directory where light modelling images are located?');
 end
 
 %frame image directory
@@ -118,18 +120,17 @@ if ~exist(darkRefImageFile, 'file')
     error("Dark reference images not found");
 end
 
-%move up one directory from the source directory
-idcs = strfind(sourDir,filesep);
-mainDir = sourDir(1:idcs(end));
-
 %light triangulation results
-ligTrigFile = fullfile(mainDir, 'light_trig', 'Result', 'pt_light.mat');
+% ligTrigFile = fullfile(sourDir, 'pt_light.mat');
+ligTrigFile = fullfile(commonDir, 'pt_light.mat');
+ 
 if ~exist(ligTrigFile, 'file')
     error("Could not find point light triangulation in the following path:\n %s\n", ligTrigFile);
 end
 
 %camera system calibration results
-cameraSysCaliFile = fullfile(mainDir, 'camera_system_calibration', 'camera_system_optimised_parameters.mat');
+% cameraSysCaliFile = fullfile(sourDir, 'camera_system_optimised_parameters.mat');
+cameraSysCaliFile = fullfile(commonDir, 'camera_system_optimised_parameters.mat');
 if ~exist(cameraSysCaliFile, 'file')
     error("Could not find camera system calibration in the following path:\n %s\n", cameraSysCaliFile);
 end
@@ -284,7 +285,7 @@ if displayOn
         0,0,0, 1;
         ]';
 
-    global fillHandleCell; %#ok<TLEV>
+    global fillHandleCell;
     fillHandleCell = cell(1,numImages);
 
     %checkerbox to turn surface plane visibility on/off
@@ -536,8 +537,8 @@ yzMin = [min(ptsLSHom(2,:)), min(ptsLSHom(3,:))];
 yzMin = yzMin - abs(rangeExpandRatio.*yzMin);
 yzMax = [max(ptsLSHom(2,:)), max(ptsLSHom(3,:))];
 yzMax = yzMax + abs(rangeExpandRatio.*yzMax);
-y = linspace(yzMin(1), yzMax(1), 400);
-z = linspace(yzMin(2), yzMax(2), 400);
+y = linspace(yzMin(1), yzMax(1), 200);
+z = linspace(yzMin(2), yzMax(2), 200);
 [X,Y,Z] = meshgrid(x,y,z);
 
 %remove extra unnecessary singular dimension
@@ -558,7 +559,6 @@ ptsTestLightSrc = ptsTestLightSrcHom(1:3, :);
 
 %Training points without radiant intensity
 [ptsRadius,ptsTheta] = cart2sphZ(ptsTestLightSrc(1,:), ptsTestLightSrc(2,:), ptsTestLightSrc(3,:));
-% [ptsRadius,ptsTheta] = cart2rtlightsrc(ptsTestLightSrc(1,:), ptsTestLightSrc(2,:), ptsTestLightSrc(3,:));
 
 testingX = [ptsRadius', ptsTheta'];
 
@@ -571,32 +571,54 @@ ZTestFr = reshape(ptsTestFrameHom(3,:),rows);
 
 disp('Estimating light source model using least squares...');
 
-optOptions = optimoptions('lsqnonlin', 'Algorithm', 'levenberg-marquardt', 'SpecifyObjectiveGradient',true, 'CheckGradients', false, ...
-    'MaxIterations', 1000000000, 'FunctionTolerance',1e-6, 'MaxFunctionEvaluations',1000000000, 'StepTolerance',1e-8, ...
-    'FiniteDifferenceType', 'central', 'ScaleProblem','none');
-optOptions.Display = 'none';
 
-optPhiBand = zeros(numBands, 3);
-resBand = zeros(numBands, 1);
-Phi0 = [1,1,1];
+%flag to run the GP training
+runLS = true;
+savedOptmFile = fullfile(resultsDir, 'ls_lightsrc_optm.mat');
+
+%check if GP was previously optimised
+if exist(savedOptmFile, 'file')
+    disp('Loading existing least squares light source mean model');
+    load(savedOptmFile);
+    runLS = false;
+end
 
 radIntVP_LeasSqr = zeros([rows, numBands]);
 
-for bandLoop = 1:numBands
+if runLS
+    optOptions = optimoptions('lsqnonlin', 'Algorithm', 'levenberg-marquardt', 'SpecifyObjectiveGradient',true, 'CheckGradients', false, ...
+        'MaxIterations', 1000000000, 'FunctionTolerance',1e-6, 'MaxFunctionEvaluations',1000000000, 'StepTolerance',1e-8, ...
+        'FiniteDifferenceType', 'central', 'ScaleProblem','none');
+    optOptions.Display = 'none';
 
-    targetL = ptsRadianceTarget(:, bandLoop);
+    optPhiBand = zeros(numBands, 3);
+    resBand = zeros(numBands, 1);
+    Phi0 = [1,1,1];
 
-    [optPhi, res] = LightSrcOptmLS(lightSrc, Phi0, targetL', ptsOnTarget', ptsSurfNorm', targetReflectances(bandLoop), optOptions, cur_stdRadianceNoise);
-    resBand(bandLoop) = res;
+    for bandLoop = 1:numBands
+        targetL = ptsRadianceTarget(:, bandLoop);
+        [optPhi, res] = LightSrcOptmLS(lightSrc, Phi0, targetL', ptsOnTarget', ptsSurfNorm', targetReflectances(bandLoop), optOptions, cur_stdRadianceNoise);
+        resBand(bandLoop) = res;
+        %store optimised parameters and residual
+        optPhiBand(bandLoop, :) = optPhi;
+        %create temporary light source using current optimised parameters
+        tempLigSrcLS = LightSimulator(locLightSrc, rotLightSrc, optPhi(1), optPhi(2), optPhi(3));
+        radIntMag = tempLigSrcLS.RadiantIntensityMesh(XTestFr, YTestFr, ZTestFr);
+        radIntVP_LeasSqr(:,:,bandLoop) = radIntMag;
+    end
 
-    %store optimised parameters and residual
-    optPhiBand(bandLoop, :) = optPhi;
+    save(savedOptmFile, 'optPhiBand', 'resBand')
 
-    %create temporary light source using current optimised parameters
-    tempLigSrcLS = LightSimulator(locLightSrc, rotLightSrc, optPhi(1), optPhi(2), optPhi(3));
-    radIntMag = tempLigSrcLS.RadiantIntensityMesh(XTestFr, YTestFr, ZTestFr);
+else
+    %use trained parameters and get irradiance
+    for bandLoop = 1:numBands
+        optPhi = optPhiBand(bandLoop, :);
+        %create temporary light source using current optimised parameters
+        tempLigSrcLS = LightSimulator(locLightSrc, rotLightSrc, optPhi(1), optPhi(2), optPhi(3));
+        radIntMag = tempLigSrcLS.RadiantIntensityMesh(XTestFr, YTestFr, ZTestFr);
+        radIntVP_LeasSqr(:,:,bandLoop) = radIntMag;
+    end
 
-    radIntVP_LeasSqr(:,:,bandLoop) = radIntMag;
 end
 
 %% Training GP model
@@ -635,10 +657,12 @@ varVP_GP = zeros([rows, numBands]);
 %flag to run the GP training
 runTraining = true;
 
+savedOptmFile = fullfile(resultsDir, 'gp_lightsrc_optm.mat');
+
 %check if GP was previously optimised
-if exist([resultsDir, filesep, 'gp_lightsrc_optm.mat'], 'file')
+if exist(savedOptmFile, 'file')
     disp('Loading existing trained GP light source mean model');
-    load([resultsDir, filesep, 'gp_lightsrc_optm.mat']);
+    load(savedOptmFile);
 
     %if downsampling and STD radiance noise have not changed, GP training is not necessary.
     if (curDownSamplingGP == downSamplingGP) && (stdRadianceNoise == cur_stdRadianceNoise)
@@ -659,17 +683,17 @@ if runTraining
         radIntVP_GP(:,:,bandLoop) = reshape(mu,rows);
         varVP_GP(:,:,bandLoop) = reshape(varMu,rows);
         hypOptCell(bandLoop) = {curHypOptStruct};
-        fprintf('GP optimised and queried band %i of %i\n', bandLoop, numBands);
+        fprintf('\tGP optimised and queried band %i of %i\n', bandLoop, numBands);
     end
 
-    save([resultsDir, filesep, 'gp_lightsrc_optm.mat'], 'hypOptCell', 'downSamplingGP', 'stdRadianceNoise');
+    save(savedOptmFile, 'hypOptCell', 'downSamplingGP', 'stdRadianceNoise');
 else
     for bandLoop = 1:numBands
         curHypOptStruct = hypOptCell{bandLoop};
         [mu, varMu] = LightSrcOptmGP(testingX, curHypOptStruct);
         radIntVP_GP(:,:,bandLoop) = reshape(mu,rows);
         varVP_GP(:,:,bandLoop) = reshape(varMu,rows);
-        fprintf('GP queried band %i of %i\n', bandLoop, numBands);
+        fprintf('\tGP queried band %i of %i\n', bandLoop, numBands);
     end
 end
 
@@ -844,7 +868,7 @@ uicontrol('Parent',sliderFig,'Style','text','Position',[300,10,200,23],...
 slider_band.Callback = @(src, eventData) band_callback(src, eventData, scatMeas, surfLeasSqr, surfGP, radIntVP_Meas, radIntVP_LeasSqr, radIntVP_GP, sMeas, sLeasSqr, sGP);
 
 %%
-close all;
+
 %%%%%%%%%%%%%%%% measured view-plane
 bandFig = 13;
 maxInt = max(radIntVP_Meas(:,bandFig),[], 'all');
@@ -852,8 +876,7 @@ maxInt = max(radIntVP_Meas(:,bandFig),[], 'all');
 % maxInt = max([ maxInt, max(radIntVP_GP(:,:,bandFig), [], 'all')]);
 
 hfig = figure();
-scatter3(ptsLSHom ...
-    (2,:), ptsLSHom(3,:), radIntVP_Meas(:,bandFig), 10, radIntVP_Meas(:,bandFig), 'filled');
+scatter3(ptsLSHom(2,:), ptsLSHom(3,:), radIntVP_Meas(:,bandFig), 10, radIntVP_Meas(:,bandFig), 'filled');
 hold on;
 
 xlabel('y (m)');
@@ -912,6 +935,52 @@ linkaxes([a1,a2,a3], 'xy');
 
 imgName = fullfile(resultsDir, 'exp_gp.png');
 exportpropergraphic(hfig, imgName,  1.5);
+
+%% Plot GP irradiance planes on simulator figure
+
+x = linspace(-0.2, 0.2, 100);
+y = 0;
+z = linspace(0, 0.5, 100);
+[X,Y,Z] = meshgrid(x,y,z);
+
+%remove extra unnecessary singular dimension
+X = squeeze(X);
+Y = squeeze(Y);
+Z = squeeze(Z);
+rows = size(X);
+
+%These points are in the line-scan c.f, transform them into
+%the frame camera c.f (world coordinates)
+ptsTestLightSrc = [X(:),Y(:),Z(:)]';
+ptsTestLightSrc = [ptsTestLightSrc; ones(1, size(ptsTestLightSrc, 2))];
+ptsTestFrameHom = T_S_2_F*ptsTestLightSrc;
+
+
+%Training points without radiant intensity
+[ptsRadius,ptsTheta] = cart2sphZ(ptsTestLightSrc(1,:), ptsTestLightSrc(2,:), ptsTestLightSrc(3,:));
+testingX = [ptsRadius', ptsTheta'];
+
+irrVisSim = zeros([size(X), numBands]);
+for bandLoop = 1:numBands
+    curHypOptStruct = hypOptCell{bandLoop};
+    mu = LightSrcOptmGP(testingX, curHypOptStruct);
+    irrVisSim(:,:,bandLoop) = reshape(mu,rows);
+end
+
+XTestFr = reshape(ptsTestFrameHom(1,:),rows);
+YTestFr = reshape(ptsTestFrameHom(2,:),rows);
+ZTestFr = reshape(ptsTestFrameHom(3,:),rows);
+lightSrc.PlotIrradianceCube(irrVisSim, XTestFr, YTestFr, ZTestFr,'GP light-src mean XZ');
+
+for bandLoop = 1:numBands
+    optPhi = optPhiBand(bandLoop, :);
+    %create temporary light source using current optimised parameters
+    tempLigSrcLS = LightSimulator(locLightSrc, rotLightSrc, optPhi(1), optPhi(2), optPhi(3));
+    radIntMag = tempLigSrcLS.RadiantIntensityMesh(XTestFr, YTestFr, ZTestFr);
+    irrVisSim(:,:,bandLoop) = radIntMag;
+end
+
+lightSrc.PlotIrradianceCube(irrVisSim, XTestFr, YTestFr, ZTestFr,'Least squares XZ');
 
 
 %% CALLBACK functions

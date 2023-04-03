@@ -101,9 +101,14 @@ else
     error('There should be either 2 or 7 input arguments for querying only or training and querying respectively.');
 end
 
-%use the optimised hyperparameter struct to get the mean and variance of
-%given testing points
-[testingY, var_testingY] = gp(hypOpt, @infGaussLik, meanfunc, covfunc, likfunc, xGP, yGP, testingX);
+if nargout > 1
+    %use the optimised hyperparameter struct to get the mean and variance of
+    %given testing points
+    [testingY, var_testingY] = gp(hypOpt, @infGaussLik, meanfunc, covfunc, likfunc, xGP, yGP, testingX);
+
+else
+    testingY = gp(hypOpt, @infGaussLik, meanfunc, covfunc, likfunc, xGP, yGP, testingX);
+end
 
 %no imaginery elements
 if ~isreal(testingY)
