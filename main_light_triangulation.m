@@ -93,7 +93,7 @@ end
 
 disp('Loading intrinsic and board parameters...');
 
-load(frameIntrFile); %Load the intrinsic parameters of the camera
+% load(frameIntrFile); %Load the intrinsic parameters of the camera
 
 %extract focal point components in pixels
 fx = cameraParams.FocalLength(1);

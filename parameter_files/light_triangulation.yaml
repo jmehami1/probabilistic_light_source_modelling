@@ -9,10 +9,10 @@ NumRows: 6
 NumCols: 9
 
 # Parameters for the code
-DisplayOn: true
+DisplayOn: false
 
 # Frame camera that is used for RGB images
-FrameCamera: "blackfly"
+FrameCamera: "l515"
 
 # Using the test data present in directory
-UseTestData: true
+UseTestData: false

@@ -30,14 +30,14 @@ f = @(H)LightSourceLeastSqrObj(H, targetL', targetPntFrame, ...
 %Perform optimisation
 [optPhi,resNormSqr] = lsqnonlin(f,Phi0, [], [], optOptions);
 
-if any(optPhi < 0)
+if any(optPhi <= 0)
     optOptionsTemp = optimoptions('lsqnonlin', 'Algorithm', 'trust-region-reflective', 'SpecifyObjectiveGradient',true, 'CheckGradients', false, ...
         'MaxIterations', 1000000000, 'FunctionTolerance',1e-8, 'MaxFunctionEvaluations',1000000000, 'StepTolerance',1e-10, ...
         'FiniteDifferenceType', 'central');
     optOptionsTemp.Display = 'none';
     
     %Perform optimisation
-    [optPhi,resNormSqr] = lsqnonlin(f,Phi0, [0,0,0], [], optOptionsTemp);
+    [optPhi,resNormSqr] = lsqnonlin(f,Phi0, [realmin,realmin,realmin], [], optOptionsTemp);
 end
 
 

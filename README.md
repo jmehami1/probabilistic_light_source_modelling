@@ -80,28 +80,22 @@ Need to capture images of the diffuse reflectance stripe attached to an ArUco bo
 
  The data directory should have the following structure:
 
-<pre>data_directory
-├── light_map
-	├── Frame
-	│   ├── img1.png
-	│   ├── img2.png
-	│   └── ...
-	├── Line-scan
-	│   ├── hs1.png
-	│   ├── hs2.png
-	│   └── ...
-	├── Result (Created after running script)
-	│   ├── gp_lightsrc_optm.mat
-	│   ├── imgExtrinsicPose.mat
-	│   └── ...
-	└── dark_ref.png
-├── light_trig
-	├── Frame
-	│   └── ...
-	├── Result
-	│   └── pt_light.mat
-└── camera_system_calibration
-	└── camera_system_optimised_parameters.mat</pre>
+<pre>light_map
+├── Frame
+│   ├── img1.png
+│   ├── img2.png
+│   └── ...
+├── Line-scan
+│   ├── hs1.png
+│   ├── hs2.png
+│   └── ...
+├── Result (Created after running script)
+│   ├── gp_lightsrc_optm.mat
+│   ├── imgExtrinsicPose.mat
+│   └── ...
+├── dark_ref.png
+├── pt_light.mat (Result from light source triangulation)
+└── camera_system_optimised_parameters.mat (Result from camera system calibration)</pre>
 
 **imgExtrinsicPose.mat** saves the detected poses from each image of the board. Requires the script to be run once on the dataset.
 
