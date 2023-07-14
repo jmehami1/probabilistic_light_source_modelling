@@ -33,7 +33,7 @@ else
 end
 
 %code for this project
-addpath('src_code');
+addpath('src');
 
 %parameter file
 paramFile = fullfile('parameter_files', 'light_modelling.yaml');
