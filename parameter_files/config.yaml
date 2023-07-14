@@ -48,3 +48,6 @@ ReflectanceStripeThickness: 2
 
 # hide figure titles
 HideTitle: false
+
+# hyperspectral band used for displaying on figure
+BandForFigures: 13

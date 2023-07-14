@@ -61,12 +61,13 @@ bandEnd = configFile.BandEnd;
 
 %maximum pixel intensity for uint14;
 maxPixelIntensity = configFile.MaximumIntensity;
-
 reflectanceStripeThick = configFile.ReflectanceStripeThickness;
 
 %STD in the radiance measurements
 stdRadianceNoisePer = configFile.sigmaRadianceNoisePercent;
 cur_stdRadianceNoise = (stdRadianceNoisePer/100);
+
+bandFig = configFile.BandForFigures;
 
 %% Directories and files
 
@@ -746,7 +747,7 @@ if ~hideTitle
     title('Dot Product with Light Source')
     h.Label.String = 'Dot product (no units)';
 end
-% 
+%
 
 % axis equal;
 % colorbar();
@@ -772,7 +773,7 @@ h = colorbar();
 if ~hideTitle
     title('Normalized Irradiance')
     h.Label.String = 'Normalized Irradiance (W/m^2)';
-%     Avoid overlapping titles
+    %     Avoid overlapping titles
     curAx = subplot(1,3,1);
     curAx.Position(1) = curAx.Position(1) - 0.01;
 end
@@ -899,7 +900,6 @@ slider_band.Callback = @(src, eventData) band_callback(src, eventData, scatMeas,
 %%
 
 %%%%%%%%%%%%%%%% measured view-plane
-bandFig = 13;
 maxInt = max(radIntVP_Meas(:,bandFig),[], 'all');
 % maxInt = max([ maxInt, max(radIntVP_LeasSqr(:,:,bandFig), [], 'all')]);
 % maxInt = max([ maxInt, max(radIntVP_GP(:,:,bandFig), [], 'all')]);
@@ -917,6 +917,10 @@ ylim([0.3, 0.57]);
 grid off;
 colorbar();
 clim([0, maxInt]);
+
+if ~hideTitle
+    title("Measured Normalized Irradiance")
+end
 
 a1 = gca;
 
@@ -938,6 +942,10 @@ grid off;
 colorbar();
 clim([0, maxInt]);
 
+if ~hideTitle
+    title("Least Squares Normalized Irradiance")
+end
+
 a2 = gca;
 
 imgName = fullfile(resultsDir, 'exp_lsq.png');
@@ -957,6 +965,10 @@ ylim([0.3, 0.57]);
 grid off;
 colorbar();
 clim([0, maxInt]);
+
+if ~hideTitle
+    title("Gaussian Process Normalized Irradiance")
+end
 
 a3 = gca;
 
@@ -999,7 +1011,7 @@ end
 XTestFr = reshape(ptsTestFrameHom(1,:),rows);
 YTestFr = reshape(ptsTestFrameHom(2,:),rows);
 ZTestFr = reshape(ptsTestFrameHom(3,:),rows);
-lightSrc.PlotIrradianceCube(irrVisSim, XTestFr, YTestFr, ZTestFr,'GP light-src mean XZ');
+lightSrc.PlotIrradianceCube(irrVisSim, XTestFr, YTestFr, ZTestFr, 'GP light-src mean XZ');
 
 for bandLoop = 1:numBands
     optPhi = optPhiBand(bandLoop, :);
@@ -1009,7 +1021,7 @@ for bandLoop = 1:numBands
     irrVisSim(:,:,bandLoop) = radIntMag;
 end
 
-lightSrc.PlotIrradianceCube(irrVisSim, XTestFr, YTestFr, ZTestFr,'Least squares XZ');
+lightSrc.PlotIrradianceCube(irrVisSim, XTestFr, YTestFr, ZTestFr, 'Least squares XZ');
 
 
 %% CALLBACK functions

@@ -375,6 +375,7 @@ ylabel('y');
 zlabel('z');
 grid on;
 axis equal;
+title("Triangulated light source location")
 
 %light source object
 lightSrc = LightSimulator(locLightSrc, rotLightSrc, figSim);
