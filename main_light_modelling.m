@@ -36,50 +36,58 @@ end
 addpath('src');
 
 %parameter file
-paramFile = fullfile('parameter_files', 'light_modelling.yaml');
+paramFile = fullfile('parameter_files', 'config.yaml');
 if ~exist(paramFile, 'file')
-    error("YAML parameter file not found");
+    error("YAML configuration file not found");
 end
-
 
 %% Read YAML file containing the pattern specifications and parameters for code
 % All dimensions are in metres
 
-paramYaml = yaml.ReadYaml(paramFile);
-displayOn = paramYaml.DisplayOn;
-frameCamera = lower(paramYaml.FrameCamera);
-usingTestData = paramYaml.UseTestData;
-curDownSamplingGP = paramYaml.DownSamplingGP;
+configFile = yaml.ReadYaml(paramFile);
+displayOn = configFile.DisplayOn;
+sourceDir = configFile.DataPath;
+hideTitle = configFile.HideTitle;
+
+xNumMarker = configFile.Model_NumCols;
+yNumMarker = configFile.Model_NumRows;
+arucoLen = configFile.Model_ArucoSideLength;
+sepLen = configFile.Model_SeparationLength;
+
+curDownSamplingGP = configFile.DownSamplingGP;
+
+bandStart = configFile.BandStart;
+bandEnd = configFile.BandEnd;
 
 %maximum pixel intensity for uint14;
-maxIntUint14 = 2^14 - 1;
+maxPixelIntensity = configFile.MaximumIntensity;
+
+reflectanceStripeThick = configFile.ReflectanceStripeThickness;
 
 %STD in the radiance measurements
-stdRadianceNoisePer = paramYaml.sigmaRadianceNoisePercent;
+stdRadianceNoisePer = configFile.sigmaRadianceNoisePercent;
 cur_stdRadianceNoise = (stdRadianceNoisePer/100);
 
 %% Directories and files
 
 disp('Checking directories...')
 
-commonDir = "/home/jmeh/Experimental_Data/lamb_carcass_une_2022/common_data/";
-%frame camera intrinsic parameters file
-% frameIntrFile = fullfile('frame_camera_intrinsic', [frameCamera, '.mat']);
-frameIntrFile = fullfile(commonDir, "frame_camera_intrinsic.mat");
-
-if ~exist(frameIntrFile, 'file')
-    error("Frame camera intrinsic parameters not found");
+if isempty(sourceDir)
+    sourceDir = uigetdir('No source directory entered in config. Please provide source directory?');
 end
 
-if usingTestData
-    sourDir = fullfile('test_data', 'light_map');
-else
-    %Get source directory where images are located and results will be saved
-    sourDir = uigetdir(fullfile('~'),'Provide source directory where light modelling images are located?');
+if ~exist(sourceDir, 'dir')
+    error('Source directory not found');
+end
+
+%frame camera intrinsic parameters file
+frameIntrFile = fullfile(sourceDir, 'frame_camera_intrinsic.mat');
+if ~exist(frameIntrFile, 'file')
+    error('Frame camera intrinsic parameter MAT file not found. It should be called "frame_camera_intrinsic.mat".');
 end
 
 %frame image directory
-frameDir = fullfile(sourDir, 'Frame'); %Directory containing images
+frameDir = fullfile(sourceDir, 'light_modelling', 'Frame'); %Directory containing images
 if ~exist(frameDir, 'dir')
     error('Source directory does not contain directory called "Frame" which should contain RGB images');
 end
@@ -88,13 +96,14 @@ fullPathFrame = fullfile(frameDir, '*.png');
 
 %Need to get number of images in directory
 numImagesFrame = numel(dir(fullPathFrame));
-
 if numImagesFrame < 1
-    error('no images in provided image directory')
+    error('no images in provided frame camera directory')
 end
 
+fprintf("\tFound frame directory with %i images\n", numImagesFrame);
+
 %hyperspectral line-scan image directory
-hsDir = fullfile(sourDir, 'Line-scan'); %Directory containing images
+hsDir = fullfile(sourceDir, 'light_modelling', 'Line-scan'); %Directory containing images
 if ~exist(hsDir, 'dir')
     error('Source directory does not contain directory called "Line-scan" which should contain hyperspectral images');
 end
@@ -108,6 +117,9 @@ if numImagesHS < 1
     error('no images in provided image directory')
 end
 
+fprintf("\tFound line-scan hyperspectral directory with %i images\n", numImagesFrame);
+
+
 if numImagesHS ~= numImagesFrame
     error("number of images in folders are not the same");
 end
@@ -115,34 +127,39 @@ end
 numImages = numImagesHS;
 
 %dark reference image
-darkRefImageFile = fullfile(sourDir, "dark_ref.png");
+darkRefImageFile = fullfile(sourceDir, "dark_ref.png");
 if ~exist(darkRefImageFile, 'file')
     error("Dark reference images not found");
+else
+    fprintf("\tFound dark reference image\n")
 end
 
 %light triangulation results
-% ligTrigFile = fullfile(sourDir, 'pt_light.mat');
-ligTrigFile = fullfile(commonDir, 'pt_light.mat');
- 
+ligTrigFile = fullfile(sourceDir, 'pt_light.mat');
 if ~exist(ligTrigFile, 'file')
     error("Could not find point light triangulation in the following path:\n %s\n", ligTrigFile);
+else
+    fprintf("\tFound light source triangulation MAT file\n")
 end
 
 %camera system calibration results
-% cameraSysCaliFile = fullfile(sourDir, 'camera_system_optimised_parameters.mat');
-cameraSysCaliFile = fullfile(commonDir, 'camera_system_optimised_parameters.mat');
+cameraSysCaliFile = fullfile(sourceDir, 'camera_system_optimised_parameters.mat');
 if ~exist(cameraSysCaliFile, 'file')
     error("Could not find camera system calibration in the following path:\n %s\n", cameraSysCaliFile);
+else
+    fprintf("\tFound camera system calibration MAT file\n")
 end
 
 %white stripe reflectance CSV file
 whiteStripeReflFile = fullfile('parameter_files', 'white_stripe_reflectance.csv');
 if ~exist(whiteStripeReflFile, 'file')
     error("white stripe reflectance CSV not found");
+else
+    fprintf("\tFound white stripe reflectance CSV file\n")
 end
 
 %result directory
-resultsDir = fullfile(sourDir, 'Result');
+resultsDir = fullfile(sourceDir, 'results');
 if ~exist(resultsDir, 'dir')
     mkdir(resultsDir);
 end
@@ -171,24 +188,6 @@ thetaFrameintr = [fx, fy, u0, v0];
 %Size of the images from the RGB camera
 frameImgSize = cameraParamF.ImageSize;
 
-%distortion parameters
-distRad = cameraParamF.RadialDistortion;
-distTan = cameraParamF.TangentialDistortion;
-% distCoefCV = [distRad(1:2), distTan, distRad(3)]; %array of distortion coefficients in opencv format
-distCoefCV = zeros(1,5); %array of distortion coefficients in opencv format
-
-%extract the error in the intrinsic parameters of the frame camera
-% std_f = estimationErrors.IntrinsicsErrors.FocalLengthError;
-% std_u0v0 = estimationErrors.IntrinsicsErrors.PrincipalPointError;
-% stdRGB_Intr = [std_f,std_u0v0];
-
-%ArUco board parameters
-xNumMarker = paramYaml.NumCols;
-yNumMarker = paramYaml.NumRows;
-arucoLen = paramYaml.ArucoSideLength;
-sepLen = paramYaml.SeparationLength;
-numMarkersExp = paramYaml.NumberExpectedMarker;
-
 %intrinsic object for the RGB camera
 frameIntrinsic = cameraIntrinsics(thetaFrameintr(1:2),thetaFrameintr(3:4), frameImgSize);
 kFrame = frameIntrinsic.IntrinsicMatrix';
@@ -198,7 +197,7 @@ kFrame = frameIntrinsic.IntrinsicMatrix';
 disp('Loading line-scan calibration parameters ...');
 
 %calibration data
-load(cameraSysCaliFile)
+load(cameraSysCaliFile, "linescan_Opt_Param", "numPixLS");
 
 %grab the last optimised parameters
 caliParam = linescan_Opt_Param(end,:);
@@ -222,7 +221,7 @@ T_F_2_LS = [rotMat, t'; 0, 0, 0, 1 ];
 T_LS_2_F = T_F_2_LS\eye(4);
 
 %dimensions of line-scan image
-rowsLS = 320;
+rowsLS = numPixLS;
 colsLS = 1;
 
 %intrinsic object for the linescan camera
@@ -266,7 +265,9 @@ axis equal;
 
 %plot line-scan camera in simulator figure w.r.t to frame camera
 figure(figSim);
-plotCamera('Location', T_LS_2_F(1:3,4), 'Orientation', T_LS_2_F(1:3, 1:3)', 'Size', 0.05, 'AxesVisible', true, 'Color', [0,0,1]); hold on;
+T = rigidtform3d(T_LS_2_F);
+plotCamera('AbsolutePose', T, 'Size', 0.05, 'AxesVisible', true, 'Color', [0,0,1]); hold on;
+% plotCamera('Location', T_LS_2_F(1:3,4), 'Orientation', T_LS_2_F(1:3, 1:3)', 'Size', 0.05, 'AxesVisible', true, 'Color', [0,0,1]); hold on;
 
 %% Pose of diffuse ArUco board from each image
 
@@ -373,8 +374,6 @@ numImages = numGoodImg;
 disp('Calculating normalised image coordinates and extracting radiance...');
 
 % relevant pixel locations in line-scan image
-bandStart = 40;
-bandEnd = 203;
 hypBands = bandStart:bandEnd;
 numBands = length(hypBands);
 
@@ -388,11 +387,12 @@ normPtImgLS = (kLS\imgLineHom)';
 
 RadiImgCell = cell(1,numImages);
 
+% normalise pixel intensity using maximum pixel intensity
 for imgLoop = 1:numImages
     curImg = imagesLS{imgLoop};
     %subtract dark reference
     radiImg = curImg - imageDark;
-    radiImg = double(radiImg(hypBands, :))./maxIntUint14;
+    radiImg = double(radiImg(hypBands, :))./maxPixelIntensity;
     RadiImgCell(imgLoop) = {radiImg};
 end
 
@@ -401,7 +401,7 @@ end
 disp('Calculating 3D location of pixels on planar target board...');
 
 % target is offset from the board by its thickness
-T_target_2_board = trvec2tform([0,0,2/1000]);
+T_target_2_board = trvec2tform([0,0,reflectanceStripeThick/1000]);
 
 ptsOnTarget = zeros(50000,3);
 ptsSurfNorm = zeros(50000,3);
@@ -571,7 +571,6 @@ ZTestFr = reshape(ptsTestFrameHom(3,:),rows);
 
 disp('Estimating light source model using least squares...');
 
-
 %flag to run the GP training
 runLS = true;
 savedOptmFile = fullfile(resultsDir, 'ls_lightsrc_optm.mat');
@@ -699,12 +698,14 @@ end
 
 %% Plot the line-scan view-plane to compare results
 
+disp('Printing and saving results...')
+
 cab(figSim);
 
 figRadianceVRadiantIntensity_VP = figure('Name', 'Line-scan View-plane');
 
 %%%%%%%%%%%%%%%% Measured Radiance on view-plane
-sRadiance = subplot(1,3,1);
+curAx = subplot(1,3,1);
 scatRadiance = scatter3(ptsLSHom(2,:), ptsLSHom(3,:), ptsRadianceTarget(:,1), 10, ptsRadianceTarget(:,1), 'filled');
 hold on;
 
@@ -715,15 +716,19 @@ hold on;
 
 xlabel('y');
 ylabel('z');
-% title('Measured Radiance')
+h = colorbar();
+if ~hideTitle
+    title('Measured Radiance')
+    h.Label.String = 'Radiance (W/(m^2 sr))';
+end
 view(2);
-colormap(sRadiance, hot(10000));
+colormap(curAx, hot(10000));
 % axis equal;
-colorbar();
+% colorbar();
 
 
 %%%%%%%%%%%%%%%% Measured Radiance on view-plane
-sDot = subplot(1,3,2);
+curAx = subplot(1,3,2);
 scatDot = scatter3(ptsLSHom(2,:), ptsLSHom(3,:), dotProductVP(:,1), 10, dotProductVP(:,1), 'filled');
 hold on;
 
@@ -734,16 +739,22 @@ hold on;
 
 xlabel('y');
 ylabel('z');
-% title('Dot Product')
 view(2);
-colormap(sDot, parula(10000));
+colormap(curAx, parula(10000));
+h = colorbar();
+if ~hideTitle
+    title('Dot Product with Light Source')
+    h.Label.String = 'Dot product (no units)';
+end
+% 
+
 % axis equal;
-colorbar();
+% colorbar();
 
 
 
-%%%%%%%%%%%%%%%% Estimated Radiant Intensity on view-plane
-sMeas = subplot(1,3,3);
+%%%%%%%%%%%%%%%% Normalized Irradiances on view-plane
+curAx = subplot(1,3,3);
 scatMeas = scatter3(ptsLSHom(2,:), ptsLSHom(3,:), radIntVP_Meas(:,1), 10, radIntVP_Meas(:,1), 'filled');
 hold on;
 
@@ -754,38 +765,43 @@ hold on;
 
 xlabel('y');
 ylabel('z');
-% title('Estimated Radiant Intensity')
 view(2);
-colormap(sMeas, hot(10000));
+colormap(curAx, hot(10000));
+h = colorbar();
+
+if ~hideTitle
+    title('Normalized Irradiance')
+    h.Label.String = 'Normalized Irradiance (W/m^2)';
+%     Avoid overlapping titles
+    curAx = subplot(1,3,1);
+    curAx.Position(1) = curAx.Position(1) - 0.01;
+end
 % axis equal;
-colorbar();
+% colorbar();
 
 
+% figRadianceVRadiantIntensity_VP = figure('Name', 'Band slider', 'Position', [659,832,580,65]);
+sliderPosition = [0.25,0.02];
+sliderWidth = 0.2;
+sliderHeight = 0.03;
 
-
-sliderFig1 = figure('Name', 'Band slider', 'Position', [659,832,580,65]);
-
-slider_band = uicontrol('Parent',sliderFig1,'Style','slider','Position',[150,40,400,40],...
+slider_band = uicontrol('Parent',figRadianceVRadiantIntensity_VP,'Style','slider','Units', 'normalized', 'Position',[sliderPosition,sliderWidth,sliderHeight],...
     'value',1, 'min', 1, 'max',numBands, 'SliderStep', [1/(numBands+1), 1/(numBands+1)]);
-bgcolor = sliderFig1.Color;
-uicontrol('Parent',sliderFig1,'Style','text','Position',[150,10,23,23],...
+bgcolor = figRadianceVRadiantIntensity_VP.Color;
+uicontrol('Parent',figRadianceVRadiantIntensity_VP,'Style','text','Units', 'normalized', 'Position',[sliderPosition(1)-0.01,sliderPosition(2),0.011,sliderHeight],...
     'String','1','BackgroundColor',bgcolor);
-uicontrol('Parent',sliderFig1,'Style','text','Position',[550,10,40,23],...
+uicontrol('Parent',figRadianceVRadiantIntensity_VP,'Style','text','Units', 'normalized', 'Position',[sliderPosition(1) + sliderWidth,sliderPosition(2),0.024,sliderHeight],...
     'String',num2str(numBands),'BackgroundColor',bgcolor);
-uicontrol('Parent',sliderFig1,'Style','text','Position',[300,10,200,23],...
+uicontrol('Parent',figRadianceVRadiantIntensity_VP,'Style','text','Units', 'normalized', 'Position',[sliderPosition(1)+sliderWidth/2,sliderPosition(2)+0.03,0.05,sliderHeight],...
     'String','Band','BackgroundColor',bgcolor);
 % callback function at the end of the script
 slider_band.Callback = @(src, eventData) band_callback2(src, eventData, scatRadiance, scatDot, scatMeas, ptsRadianceTarget, dotProductVP, radIntVP_Meas);
 
 
-figLS_VP = figure('Name', 'Line-scan View-plane models');
-
-
-
-
+figLS_VP_Irradiance = figure('Name', 'Line-scan View-plane  Normalized Irradiance');
 
 %%%%%%%%%%%%%%%% measured view-plane
-sMeas = subplot(1,3,1);
+curAx = subplot(1,3,1);
 scatMeas = scatter3(ptsLSHom ...
     (2,:), ptsLSHom(3,:), radIntVP_Meas(:,1), 10, radIntVP_Meas(:,1), 'filled');
 hold on;
@@ -798,8 +814,11 @@ maxInt = max(radIntVP_Meas(:,1));
 xlabel('y');
 ylabel('z');
 % title('Measured')
+if ~hideTitle
+    title('Measured')
+end
 view(2);
-colormap(sMeas, hot(10000));
+colormap(curAx, hot(10000));
 % axis equal;
 xlim([-0.12, 0.12]);
 ylim([0.31, 0.57]);
@@ -820,7 +839,9 @@ maxInt = max([ maxInt, max(radIntVP_LeasSqr(:,:,1), [], 'all')]);
 
 xlabel('y');
 ylabel('z');
-% title('Least Squares')
+if ~hideTitle
+    title('Least Squares')
+end
 view(2);
 colormap(sLeasSqr, hot(10000));
 % axis equal;
@@ -842,30 +863,38 @@ maxInt = max([ maxInt, max(radIntVP_GP(:,:,1), [], 'all')]);
 xlabel('y');
 ylabel('z');
 % title('Gaussian Process')
+if ~hideTitle
+    title('Gaussian Process')
+end
 view(2);
 colormap(sGP, hot(10000));
 % axis equal;
 xlim([-0.12, 0.12]);
 ylim([0.31, 0.57]);
-colorbar();
-
+h = colorbar();
+if ~hideTitle
+    h.Label.String = 'Normalized Irradiance (W/m^2)';
+end
 grid off;
 
-caxis([0, maxInt]);
+clim([0, maxInt]);
 
-sliderFig = figure('Name', 'Band slider', 'Position', [659,832,580,65]);
+% sliderFig = figure('Name', 'Ban/d slider', 'Position', [659,832,580,65]);
+sliderPosition = [0.25,0.02];
+sliderWidth = 0.2;
+sliderHeight = 0.03;
 
-slider_band = uicontrol('Parent',sliderFig,'Style','slider','Position',[150,40,400,40],...
+slider_band = uicontrol('Parent',figLS_VP_Irradiance,'Style','slider','Units', 'normalized', 'Position',[sliderPosition,sliderWidth,sliderHeight],...
     'value',1, 'min', 1, 'max',numBands, 'SliderStep', [1/(numBands+1), 1/(numBands+1)]);
-bgcolor = sliderFig.Color;
-uicontrol('Parent',sliderFig,'Style','text','Position',[150,10,23,23],...
+bgcolor = figLS_VP_Irradiance.Color;
+uicontrol('Parent',figLS_VP_Irradiance,'Style','text','Units', 'normalized', 'Position',[sliderPosition(1)-0.01,sliderPosition(2),0.011,sliderHeight],...
     'String','1','BackgroundColor',bgcolor);
-uicontrol('Parent',sliderFig,'Style','text','Position',[550,10,40,23],...
+uicontrol('Parent',figLS_VP_Irradiance,'Style','text','Units', 'normalized', 'Position',[sliderPosition(1) + sliderWidth,sliderPosition(2),0.024,sliderHeight],...
     'String',num2str(numBands),'BackgroundColor',bgcolor);
-uicontrol('Parent',sliderFig,'Style','text','Position',[300,10,200,23],...
+uicontrol('Parent',figLS_VP_Irradiance,'Style','text','Units', 'normalized', 'Position',[sliderPosition(1)+sliderWidth/2,sliderPosition(2)+0.03,0.05,sliderHeight],...
     'String','Band','BackgroundColor',bgcolor);
 % callback function at the end of the script
-slider_band.Callback = @(src, eventData) band_callback(src, eventData, scatMeas, surfLeasSqr, surfGP, radIntVP_Meas, radIntVP_LeasSqr, radIntVP_GP, sMeas, sLeasSqr, sGP);
+slider_band.Callback = @(src, eventData) band_callback(src, eventData, scatMeas, surfLeasSqr, surfGP, radIntVP_Meas, radIntVP_LeasSqr, radIntVP_GP, curAx, sLeasSqr, sGP);
 
 %%
 
@@ -887,7 +916,7 @@ xlim([-0.12, 0.12]);
 ylim([0.3, 0.57]);
 grid off;
 colorbar();
-caxis([0, maxInt]);
+clim([0, maxInt]);
 
 a1 = gca;
 
@@ -907,7 +936,7 @@ xlim([-0.12, 0.12]);
 ylim([0.3, 0.57]);
 grid off;
 colorbar();
-caxis([0, maxInt]);
+clim([0, maxInt]);
 
 a2 = gca;
 
@@ -927,7 +956,7 @@ xlim([-0.12, 0.12]);
 ylim([0.3, 0.57]);
 grid off;
 colorbar();
-caxis([0, maxInt]);
+clim([0, maxInt]);
 
 a3 = gca;
 
@@ -999,9 +1028,9 @@ surfGP.ZData = radIntVP_GP(:, :, i);
 
 maxInt = max([ max(radIntVP_Meas(:,i)), max(radIntVP_GP(:,:,i), [], 'all'), max(radIntVP_LeasSqr(:,:,i), [], 'all')]);
 
-caxis(sMeas, [0, maxInt]);
-caxis(sLeasSqr, [0, maxInt]);
-caxis(sGP, [0, maxInt]);
+clim(sMeas, [0, maxInt]);
+clim(sLeasSqr, [0, maxInt]);
+clim(sGP, [0, maxInt]);
 
 end
 

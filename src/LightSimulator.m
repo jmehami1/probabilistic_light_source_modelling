@@ -116,8 +116,10 @@ classdef LightSimulator < handle
 
             obj.targetScat = scatter3(X, Y, Z, 5, intenFirstBand, 'filled'); hold on;
 
-            caxis([0, max(intenFirstBand, [], 'all')])
-            colormap(hot(1000)); colorbar;
+            clim([0, max(intenFirstBand, [], 'all')])
+            colormap(hot(1000)); 
+            h = colorbar;
+            h.Label.String = 'Normalized Irradiance (W/m^2)';
 
             %band slider
             slider_band = uicontrol('Parent',obj.fig,'Style','slider','Position',[81,120,300,23],...
@@ -230,7 +232,10 @@ classdef LightSimulator < handle
             obj.surfDir.EdgeColor = 'none';
 
             colormap(hot(100000));
-            colorbar; caxis([0, obj.maxRadiantInt]);
+            h = colorbar; 
+            clim([0, obj.maxRadiantInt]);
+            h.Label.String = 'Pixel Irradiance (W/m^2)';
+
 
             axis equal; drawnow();
         end

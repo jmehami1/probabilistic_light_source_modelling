@@ -41,7 +41,6 @@ end
 %% Read YAML file containing the pattern specifications and parameters for code
 % All dimensions are in metres
 
-
 configFile = yaml.ReadYaml(paramFile);
 sourceDir = configFile.DataPath;
 displayOn = configFile.DisplayOn;
@@ -61,7 +60,6 @@ arucoSize = configFile.Trig_ArucoSideLength;
 %% Directories and files
 
 disp('Checking directories...')
-
 
 if isempty(sourceDir)
     sourceDir = uigetdir('No source directory entered in config. Please provide source directory?');
@@ -114,8 +112,7 @@ thetaFrameintr = [fx, fy, u0, v0];
 %Size of the images from the RGB camera
 frameImgSize = cameraParams.ImageSize;
 
-
-%d istortion parameters in opencv format (images will have distortion removed)
+%distortion parameters in opencv format (images will have distortion removed)
 distCoefCV = zeros(1,5); 
 
 %intrinsic object for the RGB camera

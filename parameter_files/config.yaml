@@ -3,9 +3,8 @@
 DataPath: "/home/jmeh/Data/lamb_carcass_armidale_2022/light_source_calibration"
 # DataPath: 
 
-
 # Show figures during execution (set to false to speed-up)
-DisplayOn: true
+DisplayOn: false
 
 # Triangulation config paramters
 
@@ -23,8 +22,29 @@ BrightSpotThreshold: 0.95
 # Light modeling config paramters
 
 # describes the dimensions of the ArUco board with the diffuse reflectance stripe to model light source. All dimensions are in metres.
-Model_Xhemi: 0.201
 Model_ArucoSideLength: 0.035
 Model_SeparationLength: 0.013
 Model_NumRows: 8
 Model_NumCols: 6
+
+# Gaussian STD noise of radiance measurements
+sigmaRadianceNoisePercent: 0.05
+
+# Down-sampling rate of data for GP training
+DownSamplingGP: 50
+
+# Start and end rows from line-scan hyperspectral image that are measured bands
+BandStart: 40
+BandEnd: 203
+
+# maxmium pixel intensity for hyperspectral camera and image format
+# uint8: Max intensity is 2^8 - 1
+# uint14: 2^14 - 1
+# uint16 is typically uint14
+MaximumIntensity: 16383
+
+# thickness of reflectance metal stripe in millimetres
+ReflectanceStripeThickness: 2
+
+# hide figure titles
+HideTitle: false
