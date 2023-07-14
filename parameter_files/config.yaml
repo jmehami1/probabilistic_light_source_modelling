@@ -1,0 +1,30 @@
+# general config parameters
+
+DataPath: "/home/jmeh/Data/lamb_carcass_armidale_2022/light_source_calibration"
+# DataPath: 
+
+
+# Show figures during execution (set to false to speed-up)
+DisplayOn: true
+
+# Triangulation config paramters
+
+# triangulation board with reflective hemisphere on ChArUco board used triangulate the direction and location of the assumed point source. All dimensions are in metres.
+Trig_Xhemi: 0.201
+Trig_Yhemi: 0.1085
+Trig_Dhemi: 0.15
+Trig_CheckerSideLength: 0.045
+Trig_ArucoSideLength: 0.035
+Trig_NumRows: 6
+Trig_NumCols: 9
+
+BrightSpotThreshold: 0.95
+
+# Light modeling config paramters
+
+# describes the dimensions of the ArUco board with the diffuse reflectance stripe to model light source. All dimensions are in metres.
+Model_Xhemi: 0.201
+Model_ArucoSideLength: 0.035
+Model_SeparationLength: 0.013
+Model_NumRows: 8
+Model_NumCols: 6

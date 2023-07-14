@@ -21,7 +21,8 @@ addpath(genpath(fullfile('ext_lib', 'yamlmatlab-master')));
 addpath(fullfile('ext_lib', 'export_fig'))
 
 %code for this project
-addpath('src_code');
+addpath('src');
+
 
 %check if mex_ChArUco_Pose has been built
 if ~exist(fullfile("ext_lib", "mex_ChArUco_Pose", "bin", "CharucoPosEst.mexa64"), 'file')
@@ -30,47 +31,54 @@ else
     addpath(genpath(fullfile("ext_lib", "mex_ChArUco_Pose")));
 end
 
-%source code for this project
-addpath('src_code');
-
 %parameter file
-paramFile = fullfile('parameter_files', 'light_triangulation.yaml');
+paramFile = fullfile('parameter_files', 'config.yaml');
 if ~exist(paramFile, 'file')
-    error("YAML parameter file not found");
+    error("YAML configuration file not found");
 end
 
 
 %% Read YAML file containing the pattern specifications and parameters for code
 % All dimensions are in metres
 
-paramYaml = yaml.ReadYaml(paramFile);
-displayOn = paramYaml.DisplayOn;
-frameCamera = lower(paramYaml.FrameCamera);
-usingTestData = paramYaml.UseTestData;
+
+configFile = yaml.ReadYaml(paramFile);
+sourceDir = configFile.DataPath;
+displayOn = configFile.DisplayOn;
+
+%relevant dimensions of reflective hemisphere on board
+xCent = configFile.Trig_Xhemi;
+yCent = configFile.Trig_Yhemi;
+hemiRad = configFile.Trig_Dhemi/2;
+brightSpotThreshold = configFile.BrightSpotThreshold;
+
+%ChArUco pattern size
+xNumCheck = configFile.Trig_NumCols;
+yNumCheck = configFile.Trig_NumRows;
+checkSize = configFile.Trig_CheckerSideLength;
+arucoSize = configFile.Trig_ArucoSideLength;
 
 %% Directories and files
 
 disp('Checking directories...')
 
-%frame camera intrinsic parameters file
-frameIntrFile = fullfile('frame_camera_intrinsic', [frameCamera, '.mat']);
 
-if ~exist(frameIntrFile, 'file')
-    error('Frame camera intrinsic parameters not found for %s', frameCamera);
+if isempty(sourceDir)
+    sourceDir = uigetdir('No source directory entered in config. Please provide source directory?');
 end
 
-%Get source directory where images are located and results will be saved
-if usingTestData
-    sourDir = fullfile('test_data', 'light_trig');
-else
-    sourDir = uigetdir('Provide source directory where light triangulation images are located?');
+if ~exist(sourceDir, 'dir')
+    error('Source directory not found');
+end
+
+%frame camera intrinsic parameters file
+frameIntrFile = fullfile(sourceDir, 'frame_camera_intrinsic.mat');
+if ~exist(frameIntrFile, 'file')
+    error('Frame camera intrinsic parameter MAT file not found. It should be called "frame_camera_intrinsic.mat".');
 end
 
 %frame image directory
-frameDir = fullfile(sourDir, 'Frame'); %Directory containing images
-if ~exist(frameDir, 'dir')
-    error('Source directory does not contain directory called "Frame" which should contain RGB images');
-end
+frameDir = fullfile(sourceDir, 'light_trig', 'Frame'); %Directory containing images
 
 fullPathFrame = fullfile(frameDir, '*.png');
 
@@ -81,19 +89,15 @@ if numImages < 1
     error('no images in provided image directory')
 end
 
-fprintf("Found directory with %i images\n", numImages);
+fprintf("\tFound directory with %i images\n", numImages);
 
-%result directory
-resultDir = fullfile(sourDir, 'Result');
-if ~exist(resultDir, 'dir')
-    mkdir(resultDir);
-end
 
 %% Load intrinsic parameters and board parameters
 
 disp('Loading intrinsic and board parameters...');
 
-% load(frameIntrFile); %Load the intrinsic parameters of the camera
+
+load(frameIntrFile); %Load the intrinsic parameters of the camera
 
 %extract focal point components in pixels
 fx = cameraParams.FocalLength(1);
@@ -109,28 +113,10 @@ thetaFrameintr = [fx, fy, u0, v0];
 
 %Size of the images from the RGB camera
 frameImgSize = cameraParams.ImageSize;
-% frameImgSize = frameImgSize(1:2);
 
-%distortion parameters
-distRad = cameraParams.RadialDistortion;
-distTan = cameraParams.TangentialDistortion;
-distCoefCV = zeros(1,5); %array of distortion coefficients in opencv format
 
-%extract the error in the intrinsic parameters of the frame camera
-if exist('estimationErrors', 'var')
-    %extract the error in the intrinsic parameters of the frame camera
-    std_f = estimationErrors.IntrinsicsErrors.FocalLengthError;
-    std_u0v0 = estimationErrors.IntrinsicsErrors.PrincipalPointError;
-    stdRGB_Intr = [std_f,std_u0v0];
-else
-    stdRGB_Intr = zeros(1,4);
-end
-
-%ChArUco pattern size
-xNumCheck = paramYaml.NumCols;
-yNumCheck = paramYaml.NumRows;
-checkSize = paramYaml.CheckerSideLength;
-arucoSize = paramYaml.ArucoSideLength;
+%d istortion parameters in opencv format (images will have distortion removed)
+distCoefCV = zeros(1,5); 
 
 %intrinsic object for the RGB camera
 frameIntrinsic = cameraIntrinsics(thetaFrameintr(1:2),thetaFrameintr(3:4), frameImgSize);
@@ -200,12 +186,6 @@ close all;
 
 disp('Finding brightest pixel on reflective hemisphere images...');
 
-
-%relevant dimensions of reflective hemisphere on board
-xCent = paramYaml.Xhemi;
-yCent = paramYaml.Yhemi;
-hemiRad = paramYaml.Dhemi/2;
-
 %points on the edge of the reflective hemisphere w.r.t to the board
 noPts = 100;
 theta = linspace(0, 2*pi, noPts);
@@ -243,51 +223,17 @@ for imgLoop = 1:numImages
     patPtsFrame = patPtsHomFrame(1:3,:)';
     patImgPts = projectPoints(patPtsFrame, K_frame', eye(4), [], frameImgSize);
 
-    %clip pixels to remain within the size of the frame image
-    for row = 1:noPts
-        pixU = round(patImgPts(row,1));
-
-        if pixU < 1
-            pixU = 1;
-        elseif pixU > frameImgSize(2)
-            pixU = frameImgSize(2);
-        end
-
-        patImgPts(row,1) = pixU;
-
-        pixV = round(patImgPts(row,2));
-
-        if pixV < 1
-            pixV = 1;
-        elseif pixV > frameImgSize(1)
-            pixV = frameImgSize(1);
-        end
-
-        patImgPts(row,2) = pixV;
-    end
-
-    patImgPts = patImgPts';
 
     %convert color to grayscale
     imgGray = im2gray(imagesFrame{imgLoop});
-
-
-    imgGraySphere = zeros(size(imgGray), 'uint8');
-
-    %extract on the pixels that contain the reflective sphere
-    for v = min(patImgPts(2, :), [], 'all'):max(patImgPts(2, :), [], 'all')
-        for u = min(patImgPts(1, :), [], 'all'):max(patImgPts(1, :), [], 'all')
-            if (inpolygon(u, v, patImgPts(1,:), patImgPts(2,:)))
-                imgGraySphere(v, u) = imgGray(v, u);
-            end
-        end
-    end
+    mask = roipoly(imgGray, patImgPts(:,1), patImgPts(:,2));
+    imgGraySphere = uint8(mask).*imgGray;
 
     %convert grayscale to normalised grayscale
     imgGraySphereNorm = mat2gray(imgGraySphere);
 
     %thresold all pixels on the sphere
-    imgBrSpot = imgGraySphereNorm > 0.95;
+    imgBrSpot = imgGraySphereNorm > brightSpotThreshold;
 
     %erode
     imgBrSpot = imerode(imgBrSpot, SE);
@@ -404,7 +350,9 @@ rotLightSrc = axang2rotm([perpenDir', DirTheta]);
 
 disp('Saving results...');
 
-save(fullfile(resultDir, 'pt_light.mat'), 'locLightSrc', 'rotLightSrc');
+
+save(fullfile(sourceDir, 'pt_light.mat'), 'locLightSrc', 'rotLightSrc');
+
 
 display(locLightSrc);
 display(dirLightSrc);
@@ -420,8 +368,6 @@ r_d = 1; %effective radius of disk source
 
 %Starting distance from the source in metres for visualisation
 distFromSrc = 0.2;
-
-
 
 %figure for light simulator
 figSim = figure('Name', 'Light Simulator with Frame Camera Origin');
