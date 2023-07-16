@@ -506,21 +506,45 @@ ptsOnTarget = ptsOnTarget(1:numPtsCount, :);
 ptsSurfNorm = ptsSurfNorm(1:numPtsCount, :);
 ptsRadianceTarget = ptsRadianceTarget(1:numPtsCount, :);
 
-%% Light source triangulation parameters
-
-%extract location and principal direction.
-load(ligTrigFile);
-T_S_2_F = [rotLightSrc, locLightSrc; 0,0,0,1];
-
-%light source simulator for visualisation
-lightSrc = LightSimulator(locLightSrc, rotLightSrc, figSim, ptsOnTarget, ptsRadianceTarget, numBands, numPtsCount);
-
 %% Diffuse reflectance target stripe
 
 %read the reflectance values for each band of the hyperspectral camera
 %stored in file
 data = readmatrix(whiteStripeReflFile);
 targetReflectances = data(:,2);
+
+%% Light source triangulation parameters
+
+disp('Light source and cameras with irradiance...');
+
+%extract location and principal direction.
+load(ligTrigFile, 'rotLightSrc', 'locLightSrc');
+T_S_2_F = [rotLightSrc, locLightSrc; 0,0,0,1];
+
+%calculate the direction light vector (point to light source)
+pntLightVec = locLightSrc - ptsOnTarget';
+dirPntLightVec = pntLightVec./vecnorm(pntLightVec);
+
+%irradiance which is actually measured by line-scan camera
+radIntVP_Meas = zeros(size(ptsRadianceTarget));
+
+dotProductVP = zeros(size(ptsRadianceTarget));
+
+%Calculate radiant intensity magnitude used for building model
+for bandLoop = 1:numBands
+    curRefl = targetReflectances(bandLoop);
+    targetL = ptsRadianceTarget(:, bandLoop);
+    radIntMagPnt = (targetL'.*pi)./(curRefl.*dot(ptsSurfNorm', dirPntLightVec,1));
+    radIntVP_Meas(:,bandLoop) = radIntMagPnt';
+    dotProductVP(:,bandLoop) = dot(ptsSurfNorm', dirPntLightVec,1);
+end
+
+
+
+
+%light source simulator for visualisation
+lightSrc = LightSimulator(locLightSrc, rotLightSrc, figSim, ptsOnTarget, radIntVP_Meas, numBands, numPtsCount);
+
 
 %% Prepare Data for building models
 
@@ -623,10 +647,6 @@ end
 
 %% Training GP model
 
-%calculate the direction light vector (point to light source)
-pntLightVec = locLightSrc - ptsOnTarget';
-dirPntLightVec = pntLightVec./vecnorm(pntLightVec);
-
 %transform points from frame camera C.F to light source C.F
 ptsTestLightSrcHom = T_S_2_F\ptsFrameHom;
 ptsLightSrc = ptsTestLightSrcHom(1:3, :);
@@ -635,20 +655,6 @@ ptsLightSrc = ptsTestLightSrcHom(1:3, :);
 [ptsRadius,ptsTheta] = cart2sphZ(ptsLightSrc(1,:), ptsLightSrc(2,:), ptsLightSrc(3,:));
 
 trainingXY = [ptsRadius', ptsTheta'];
-
-%irradiance which is actually measured by line-scan camera
-radIntVP_Meas = zeros(size(ptsRadianceTarget));
-
-dotProductVP = zeros(size(ptsRadianceTarget));
-
-%Calculate radiant intensity magnitude used for building model
-for bandLoop = 1:numBands
-    curRefl = targetReflectances(bandLoop);
-    targetL = ptsRadianceTarget(:, bandLoop);
-    radIntMagPnt = (targetL'.*pi)./(curRefl.*dot(ptsSurfNorm', dirPntLightVec,1));
-    radIntVP_Meas(:,bandLoop) = radIntMagPnt';
-    dotProductVP(:,bandLoop) = dot(ptsSurfNorm', dirPntLightVec,1);
-end
 
 %store the radiant intensity from GP model with corresponding variance
 radIntVP_GP = zeros([rows, numBands]);
@@ -979,9 +985,28 @@ exportpropergraphic(hfig, imgName,  1.5);
 
 %% Plot GP irradiance planes on simulator figure
 
-x = linspace(-0.2, 0.2, 100);
-y = 0;
-z = linspace(0, 0.5, 100);
+% x = linspace(-0.2, 0.2, 100);
+% y = 0;
+% z = linspace(0, 0.5, 100);
+% [X,Y,Z] = meshgrid(x,y,z);
+% 
+% %remove extra unnecessary singular dimension
+% X = squeeze(X);
+% Y = squeeze(Y);
+% Z = squeeze(Z);
+% rows = size(X);
+% 
+% %These points are in the line-scan c.f, transform them into
+% %the frame camera c.f (world coordinates)
+% ptsTestLightSrc = [X(:),Y(:),Z(:)]';
+% ptsTestLightSrc = [ptsTestLightSrc; ones(1, size(ptsTestLightSrc, 2))];
+% ptsTestFrameHom = T_S_2_F*ptsTestLightSrc;
+
+
+x = mean(ptsLSHom(1,:));
+rangeExpandRatio = 0.25;
+y = linspace(yzMin(1), yzMax(1), 200);
+z = linspace(yzMin(2), yzMax(2), 200);
 [X,Y,Z] = meshgrid(x,y,z);
 
 %remove extra unnecessary singular dimension
@@ -992,9 +1017,23 @@ rows = size(X);
 
 %These points are in the line-scan c.f, transform them into
 %the frame camera c.f (world coordinates)
-ptsTestLightSrc = [X(:),Y(:),Z(:)]';
-ptsTestLightSrc = [ptsTestLightSrc; ones(1, size(ptsTestLightSrc, 2))];
-ptsTestFrameHom = T_S_2_F*ptsTestLightSrc;
+ptsTestLS = [X(:),Y(:),Z(:)]';
+ptsTestLSHom = [ptsTestLS; ones(1, size(ptsTestLS, 2))];
+ptsTestFrameHom = T_LS_2_F*ptsTestLSHom;
+
+%transform points from frame camera C.F to light source C.F
+ptsTestLightSrcHom = T_S_2_F\ptsTestFrameHom;
+ptsTestLightSrc = ptsTestLightSrcHom(1:3, :);
+
+%Training points without radiant intensity
+% [ptsRadius,ptsTheta] = cart2sphZ(ptsTestLightSrc(1,:), ptsTestLightSrc(2,:), ptsTestLightSrc(3,:));
+
+% testingX = [ptsRadius', ptsTheta'];
+
+%Reshape the testing points in the frame camera C.F. into a mesh
+% XTestFr = reshape(ptsTestFrameHom(1,:),rows);
+% YTestFr = reshape(ptsTestFrameHom(2,:),rows);
+% ZTestFr = reshape(ptsTestFrameHom(3,:),rows);
 
 
 %Training points without radiant intensity

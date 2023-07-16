@@ -33,6 +33,8 @@ classdef LightSimulator < handle
         numCubes
         nameCubes
         bandCBMax
+        dropDownMenuIrradiance
+        IrradianceOptions
     end
 
     methods
@@ -116,7 +118,7 @@ classdef LightSimulator < handle
 
             obj.targetScat = scatter3(X, Y, Z, 5, intenFirstBand, 'filled'); hold on;
 
-            clim([0, max(intenFirstBand, [], 'all')])
+            
             colormap(hot(1000)); 
             h = colorbar;
             h.Label.String = 'Normalized Irradiance (W/m^2)';
@@ -127,7 +129,7 @@ classdef LightSimulator < handle
             bgcolor = obj.fig.Color;
             uicontrol('Parent',obj.fig,'Style','text','Position',[50,90,23,23],...
                 'String','1','BackgroundColor',bgcolor);
-            uicontrol('Parent',obj.fig,'Style','text','Position',[350,90,40,23],...
+            uicontrol('Parent',obj.fig,'Style','text','Position',[350,90,70,23],...
                 'String',num2str(obj.numBands),'BackgroundColor',bgcolor);
             uicontrol('Parent',obj.fig,'Style','text','Position',[150,90,200,23],...
                 'String','Band','BackgroundColor',bgcolor);
@@ -135,6 +137,20 @@ classdef LightSimulator < handle
             %                 'String', num2str(obj.distFromSrc),'BackgroundColor', [1,1,1]);
             %callback function at the end of the script
             slider_band.Callback = @(src, eventData) obj.band_callback(src, eventData);
+
+            for i = 1:obj.numBands
+                curBandInt = obj.targetbandInten(:,i);
+                tempVec = curBandInt(:);
+                obj.bandCBMax(i) = max(rmoutliers(tempVec, 'quartiles'), [], 'all');
+            end
+
+            clim([0, obj.bandCBMax(1)])
+
+            obj.IrradianceOptions = "Measured Irradiance";
+
+            obj.dropDownMenuIrradiance = uicontrol('Parent',obj.fig,'Style','popupmenu','Position',[81,150,300,23],...
+                'String', obj.IrradianceOptions);
+            obj.dropDownMenuIrradiance.Callback = @(src, event) obj.selection(src, event);
 
             drawnow();
         end
@@ -154,25 +170,39 @@ classdef LightSimulator < handle
             intenFirstBand = irrCube(:,:,1);
             obj.cubeS{obj.numCubes} = surf(X,Y,Z,intenFirstBand, 'EdgeColor','none');hold on;
 
-            dd = uicontrol('Parent',obj.fig,'Style','popupmenu','Position',[81,150,300,23],...
-                'String',obj.nameCubes);
-            dd.Callback = @(src, event) obj.selection(src, event);
-            drawnow();
+            obj.IrradianceOptions = [obj.IrradianceOptions, cubeName];
+            obj.dropDownMenuIrradiance.String = obj.IrradianceOptions;
 
-            
+            numTotalPtsCubes = size(obj.targetbandInten, 1);
 
+            for i = 1:obj.numCubes
+                dims = size(obj.irrCube{i}, [1,2]);
+                numTotalPtsCubes = numTotalPtsCubes + dims(1)*dims(2);
+            end
+
+            allPts = zeros(1, numTotalPtsCubes);
+                   
             for i = 1:obj.numBands
-                curBandInt = obj.targetbandInten(:,i);
-                tempVec = curBandInt(:);
+                idx = size(obj.targetbandInten, 1);
+                allPts(1:idx) = obj.targetbandInten(:,i);
 
                 for j = 1:obj.numCubes
                     curBandInt = obj.irrCube{j};
                     curBandInt = curBandInt(:,:,i);
-                    tempVec = [tempVec; curBandInt(:)];
+                    curBandInt = curBandInt(:);
+                    
+                    allPts(idx+1 : idx+length(curBandInt)) = curBandInt;
+                    idx = idx+length(curBandInt);
                 end
 
-                obj.bandCBMax(i) = max(rmoutliers(tempVec, 'quartiles'), [], 'all');
+                obj.bandCBMax(i) = max(rmoutliers(allPts, 'quartiles'), [], 'all');
+
             end
+
+            clim([0, obj.bandCBMax(1)]) 
+            
+
+            drawnow();
 
         end
 
@@ -184,8 +214,10 @@ classdef LightSimulator < handle
             for i = 1:obj.numCubes
                 obj.cubeS{i}.Visible = 'off';
             end
-
-            obj.cubeS{val}.Visible = 'on';
+            
+            if val > 1
+                obj.cubeS{val-1}.Visible = 'on';
+            end
         end
 
 
