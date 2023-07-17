@@ -35,6 +35,7 @@ classdef LightSimulator < handle
         bandCBMax
         dropDownMenuIrradiance
         IrradianceOptions
+        bandText
     end
 
     methods
@@ -131,8 +132,8 @@ classdef LightSimulator < handle
                 'String','1','BackgroundColor',bgcolor);
             uicontrol('Parent',obj.fig,'Style','text','Position',[350,90,70,23],...
                 'String',num2str(obj.numBands),'BackgroundColor',bgcolor);
-            uicontrol('Parent',obj.fig,'Style','text','Position',[150,90,200,23],...
-                'String','Band','BackgroundColor',bgcolor);
+            obj.bandText = uicontrol('Parent',obj.fig,'Style','text','Position',[150,90,200,23],...
+                'String','Band 1','BackgroundColor',bgcolor);
             %             disp_dist = uicontrol('Parent',obj.fig,'Style','text','Position',[200,145,50,20],...
             %                 'String', num2str(obj.distFromSrc),'BackgroundColor', [1,1,1]);
             %callback function at the end of the script
@@ -492,6 +493,7 @@ classdef LightSimulator < handle
 
         function band_callback(obj, src, ~)
             curBand = round(src.Value);
+            obj.bandText.String = ['Band ', num2str(curBand)];
             curBandInt = obj.targetbandInten(:,curBand);
             obj.targetScat.CData = curBandInt;
             

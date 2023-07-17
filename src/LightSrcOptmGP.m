@@ -1,13 +1,13 @@
-% function [mu, varMu, hypOpt] = LightSrcOptmGP(meanType, trainingData, testingX, sigmaNoise, downSamp, iter, verboseFlag, varargin)
-% function [mu, varMu, hypOpt, trainingDownXY] = LightSrcOptmGP(meanType, trainingXY, testingX, sigmaNoise, varargin)
+% function [mu, varMu, hypOpt] = LightSrcOptmGP(meanType, trainingData, X, sigmaNoise, downSamp, iter, verboseFlag, varargin)
+% function [mu, varMu, hypOpt, trainingDownXY] = LightSrcOptmGP(meanType, trainingXY, X, sigmaNoise, varargin)
 
 
-function [testingY, var_testingY, hypOptStruct] = LightSrcOptmGP(testingX, varargin)
+function [y, var_y, hypOptStruct] = LightSrcOptmGP(X, varargin)
 % Builds the intensity field of a non-isotropic disk light source model
 % given data using Gaussian Processes with different mean-function options.
 %
 % INPUTS:
-%       testingX - Testing data array organised as columns [radius, theta]
+%       X - Testing data array organised as columns [radius, theta]
 %
 %       ****Arugments for training and querying****
 %       trainingXY - training data array organised as columns [radius, theta, radiant intensity magnitude]
@@ -26,9 +26,9 @@ function [testingY, var_testingY, hypOptStruct] = LightSrcOptmGP(testingX, varar
 %           model
 % 
 % OUTPUTS:
-%       testingY - Queried radiant intensity mean of testing data from optimised
+%       y - Queried radiant intensity mean of testing data from optimised
 %           GP model
-%       var_testingY - Queried radiant intensity variance of testing data from
+%       var_y - Queried radiant intensity variance of testing data from
 %           optimised GP model
 %       hypOptStruct - struct of parameters that store optimised
 %           hyperparameter struct and other GP information
@@ -49,13 +49,17 @@ if nargin == 2
     yGP = trainingDownXY(:,3);
     
     %training of GP and querying optimised model
-elseif nargin == 7
+elseif nargin > 6
     trainingXY = varargin{1};
     meanType = varargin{2};
     sigmaNoise = varargin{3};
     downSamp = varargin{4};
     iter = varargin{5};
     verboseFlag = varargin{6};
+
+    if nargin > 7
+        meanInitialGuess = varargin{7};
+    end
     
     covfunc = @covSEiso; %covariance function
     likfunc = @likGauss; %gaussian likelihood
@@ -80,6 +84,12 @@ elseif nargin == 7
             meanfunc = @meanLightSrc;
             meanHyper = [1,1,1];
     end
+
+    if exist('meanInitialGuess', 'var')
+        meanHyper = meanInitialGuess;
+    end
+
+
     
     %initial hyperparameter struct
     hyp = struct('mean', meanHyper, 'cov', [0,0], 'lik', log(sigmaNoise));
@@ -104,15 +114,15 @@ end
 if nargout > 1
     %use the optimised hyperparameter struct to get the mean and variance of
     %given testing points
-    [testingY, var_testingY] = gp(hypOpt, @infGaussLik, meanfunc, covfunc, likfunc, xGP, yGP, testingX);
+    [y, var_y] = gp(hypOpt, @infGaussLik, meanfunc, covfunc, likfunc, xGP, yGP, X);
 
 else
-    testingY = gp(hypOpt, @infGaussLik, meanfunc, covfunc, likfunc, xGP, yGP, testingX);
+    y = gp(hypOpt, @infGaussLik, meanfunc, covfunc, likfunc, xGP, yGP, X);
 end
 
 %no imaginery elements
-if ~isreal(testingY)
-    testingY = real(testingY);
+if ~isreal(y)
+    y = real(y);
 end
 
 end
