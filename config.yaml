@@ -1,6 +1,6 @@
 # general config parameters
 
-DataPath: "/home/jmeh/Data/lamb_carcass_armidale_2022/light_source_calibration"
+DataPath: "/home/jmeh/Data/lamb_carcass_armidale_2021/light_source_calibration2"
 # DataPath: 
 
 # Show figures during execution (set to false to speed-up)
@@ -28,10 +28,10 @@ Model_NumRows: 8
 Model_NumCols: 6
 
 # Gaussian STD noise of radiance measurements
-sigmaRadianceNoisePercent: 0.05
+sigmaRadianceNoisePercent: 0.02
 
 # Down-sampling rate of data for GP training
-DownSamplingGP: 50
+DownSamplingGP: 20
 
 # Start and end rows from line-scan hyperspectral image that are measured bands
 BandStart: 40
