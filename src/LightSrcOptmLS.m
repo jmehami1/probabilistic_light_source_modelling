@@ -30,6 +30,7 @@ f = @(H)LightSourceLeastSqrObj(H, targetL', targetPntFrame, ...
 %Perform optimisation
 [optPhi,resNormSqr] = lsqnonlin(f,Phi0, [], [], optOptions);
 
+% Re-run optimisation with constraints if any parameters are non-negative
 if any(optPhi <= 0)
     optOptionsTemp = optimoptions('lsqnonlin', 'Algorithm', 'trust-region-reflective', 'SpecifyObjectiveGradient',true, 'CheckGradients', false, ...
         'MaxIterations', 1000000000, 'FunctionTolerance',1e-8, 'MaxFunctionEvaluations',1000000000, 'StepTolerance',1e-10, ...
@@ -39,9 +40,6 @@ if any(optPhi <= 0)
     %Perform optimisation
     [optPhi,resNormSqr] = lsqnonlin(f,Phi0, [realmin,realmin,realmin], [], optOptionsTemp);
 end
-
-
-
 
 optPhi = optPhi';
 

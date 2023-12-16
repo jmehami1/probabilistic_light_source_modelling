@@ -36,7 +36,7 @@ end
 addpath('src');
 
 %parameter file
-paramFile = fullfile('parameter_files', 'config.yaml');
+paramFile = fullfile('config.yaml');
 if ~exist(paramFile, 'file')
     error("YAML configuration file not found");
 end
@@ -629,6 +629,7 @@ if runLS
         tempLigSrcLS = LightSimulator(locLightSrc, rotLightSrc, optPhi(1), optPhi(2), optPhi(3));
         radIntMag = tempLigSrcLS.RadiantIntensityMesh(XTestFr, YTestFr, ZTestFr);
         radIntVP_LeasSqr(:,:,bandLoop) = radIntMag;
+        Phi0 = optPhi;
     end
 
     save(savedOptmFile, 'optPhiBand', 'resBand')
@@ -676,6 +677,8 @@ if exist(savedOptmFile, 'file')
     end
 end
 
+meanParams = zeros(164,3);
+
 
 if runTraining
     %cell arrays to store hyperparameters and training data for each band
@@ -685,11 +688,12 @@ if runTraining
 
     for bandLoop = 1:numBands
         trainingXY(:,3) = radIntVP_Meas(:, bandLoop);
-        [mu, varMu, curHypOptStruct] = LightSrcOptmGP(testingX, trainingXY, 3, stdRadianceNoise, downSamplingGP, 10000, false);
+        [mu, varMu, curHypOptStruct] = LightSrcOptmGP(testingX, trainingXY, 3, stdRadianceNoise, downSamplingGP, 10000, false, log(optPhiBand(bandLoop, :)));
         radIntVP_GP(:,:,bandLoop) = reshape(mu,rows);
         varVP_GP(:,:,bandLoop) = reshape(varMu,rows);
         hypOptCell(bandLoop) = {curHypOptStruct};
         fprintf('\tGP optimised and queried band %i of %i\n', bandLoop, numBands);
+        meanParams(bandLoop,:) = curHypOptStruct.hypOpt.mean;
     end
 
     save(savedOptmFile, 'hypOptCell', 'downSamplingGP', 'stdRadianceNoise');
@@ -700,8 +704,11 @@ else
         radIntVP_GP(:,:,bandLoop) = reshape(mu,rows);
         varVP_GP(:,:,bandLoop) = reshape(varMu,rows);
         fprintf('\tGP queried band %i of %i\n', bandLoop, numBands);
+        meanParams(bandLoop,:) = curHypOptStruct.hypOpt.mean;
     end
 end
+
+figure;stackedplot(meanParams);
 
 %% Plot the line-scan view-plane to compare results
 
@@ -1050,7 +1057,7 @@ end
 XTestFr = reshape(ptsTestFrameHom(1,:),rows);
 YTestFr = reshape(ptsTestFrameHom(2,:),rows);
 ZTestFr = reshape(ptsTestFrameHom(3,:),rows);
-lightSrc.PlotIrradianceCube(irrVisSim, XTestFr, YTestFr, ZTestFr, 'GP light-src mean XZ');
+lightSrc.PlotIrradianceCube(irrVisSim, XTestFr, YTestFr, ZTestFr, 'GP light-src mean');
 
 for bandLoop = 1:numBands
     optPhi = optPhiBand(bandLoop, :);
@@ -1060,7 +1067,7 @@ for bandLoop = 1:numBands
     irrVisSim(:,:,bandLoop) = radIntMag;
 end
 
-lightSrc.PlotIrradianceCube(irrVisSim, XTestFr, YTestFr, ZTestFr, 'Least squares XZ');
+lightSrc.PlotIrradianceCube(irrVisSim, XTestFr, YTestFr, ZTestFr, 'Least squares');
 
 
 %% CALLBACK functions

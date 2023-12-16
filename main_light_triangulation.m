@@ -32,7 +32,7 @@ else
 end
 
 %parameter file
-paramFile = fullfile('parameter_files', 'config.yaml');
+paramFile = fullfile('config.yaml');
 if ~exist(paramFile, 'file')
     error("YAML configuration file not found");
 end
